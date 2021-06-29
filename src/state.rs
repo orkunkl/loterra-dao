@@ -1,15 +1,17 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Addr, CanonicalAddr, Storage, Uint128};
-use cosmwasm_storage::{bucket_read, Bucket, ReadonlyBucket};
+use cosmwasm_std::{CanonicalAddr, Storage, Uint128};
 use cw_storage_plus::{Item, Map};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct State {
-    pub count: i32,
-    pub owner: Addr,
+pub struct Config {
+    pub admin: CanonicalAddr,
+    pub poll_default_end_height: u64,
+    pub staking_contract_address: CanonicalAddr,
 }
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct State {}
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct PollInfoState {
     pub creator: CanonicalAddr,
@@ -24,7 +26,7 @@ pub struct PollInfoState {
     pub amount: Uint128,
     pub prize_rank: Vec<u8>,
     pub proposal: Proposal,
-    pub migration_address: Option<Addr>,
+    pub migration_address: Option<CanonicalAddr>,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum PollStatus {
@@ -49,6 +51,7 @@ pub enum Proposal {
     NotExist,
 }
 
+pub const CONFIG: Item<Config> = Item::new("config");
 pub const STATE: Item<State> = Item::new("state");
 pub const POLL: Map<&[u8], PollInfoState> = Map::new("poll");
 pub const POLL_VOTE: Map<(&[u8], &[u8]), bool> = Map::new("poll_vote");

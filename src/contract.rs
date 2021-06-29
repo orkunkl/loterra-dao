@@ -1,12 +1,8 @@
-use cosmwasm_std::{
-    attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128,
-};
+use cosmwasm_std::{attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Uint64, WasmMsg, StdError};
 
-use crate::error::ContractError;
 use crate::msg::ExecuteMsg::Poll;
-use crate::msg::{CountResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{PollStatus, State, POLL, POLL_VOTE, STATE};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::state::{Config, PollStatus, State, CONFIG, POLL, POLL_VOTE, STATE};
 //use crate::helpers::user_total_weight;
 use std::ops::Add;
 
@@ -18,13 +14,35 @@ pub fn instantiate(
     _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
-    let state = State {
-        count: msg.count,
-        owner: info.sender,
+) -> StdResult<Response> {
+    let config = Config {
+        admin: deps.api.addr_canonicalize(info.sender.as_str()).unwrap(),
+        poll_default_end_height: msg.poll_default_end_height,
+        staking_contract_address: deps
+            .api
+            .addr_canonicalize(msg.staking_contract_address.as_str())
+            .unwrap(),
     };
-    STATE.save(deps.storage, &state)?;
-    Ok(Response::default())
+    CONFIG.save(deps.storage, &config)?;
+
+    let wasm = WasmMsg::Instantiate {
+        admin: Some(info.sender.to_string()),
+        code_id: msg.code_id,
+        msg: msg.message,
+        send: vec![],
+        label: msg.label,
+    };
+
+    Ok(Response {
+        submessages: vec![],
+        messages: vec![wasm.into()],
+        attributes: vec![
+            attr("action", "instantiate"),
+            attr("admin", info.sender),
+            attr("code_id", msg.code_id),
+        ],
+        data: None,
+    })
 }
 
 // And declare a custom Error variant for the ones where you will want to make use of it
@@ -34,7 +52,7 @@ pub fn execute(
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Vote { poll_id, approve } => try_vote(deps, info, env, poll_id, approve),
         _ => Ok(Response {
@@ -51,22 +69,22 @@ pub fn try_vote(
     env: Env,
     poll_id: u64,
     approve: bool,
-) -> Result<Response, ContractError> {
+) -> StdResult<Response> {
     let state = STATE.load(deps.storage)?;
     let mut poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
     // Ensure the sender not sending funds accidentally
     if !info.funds.is_empty() {
-        return Err(ContractError::DoNotSendFunds {});
+        return Err(StdError::generic_err("do not send funds"));
     }
     let sender = deps.api.addr_canonicalize(info.sender.as_ref())?;
 
     // Ensure the poll is still valid
     if env.block.height > poll.end_height {
-        return Err(ContractError::PollExpired {});
+        return Err(StdError::generic_err("poll expired"));
     }
     // Ensure the poll is still valid
     if poll.status != PollStatus::InProgress {
-        return Err(ContractError::PollClosed {});
+        return Err(StdError::generic_err("poll closed"));
     }
 
     POLL_VOTE.update(
@@ -74,7 +92,7 @@ pub fn try_vote(
         (&sender, &poll_id.to_be_bytes()),
         |exist| match exist {
             None => Ok(approve),
-            Some(_) => Err(ContractError::AlreadyVoted {}),
+            Some(_) => Err(StdError::generic_err("already voted")),
         },
     )?;
 
@@ -83,7 +101,7 @@ pub fn try_vote(
     let weight = Uint128(200);
     // Only stakers can vote
     if weight.is_zero() {
-        return Err(ContractError::OnlyStakers {});
+        return Err(StdError::generic_err("only stakers can vote"));
     }
 
     // save weight
@@ -137,9 +155,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-fn query_count(deps: Deps) -> StdResult<CountResponse> {
+fn query_count(deps: Deps) -> StdResult<u64> {
     let state = STATE.load(deps.storage)?;
-    Ok(CountResponse { count: state.count })
+    Ok(1)
 }
 
 #[cfg(test)]
@@ -149,7 +167,13 @@ mod tests {
     use cosmwasm_std::{coins, from_binary};
 
     fn default_init(deps: DepsMut) {
-        let msg = InstantiateMsg { count: 17 };
+        let msg = InstantiateMsg {
+            code_id: 0,
+            message: Default::default(),
+            label: "".to_string(),
+            staking_contract_address: "".to_string(),
+            poll_default_end_height: 0,
+        };
         let info = mock_info("creator", &coins(1000, "earth"));
         // we can just call .unwrap() to assert this was a success
         let res = instantiate(deps, mock_env(), info, msg).unwrap();
@@ -158,7 +182,13 @@ mod tests {
     fn proper_initialization() {
         let mut deps = mock_dependencies(&[]);
 
-        let msg = InstantiateMsg { count: 17 };
+        let msg = InstantiateMsg {
+            code_id: 0,
+            message: Default::default(),
+            label: "".to_string(),
+            staking_contract_address: "".to_string(),
+            poll_default_end_height: 0,
+        };
         let info = mock_info("creator", &coins(1000, "earth"));
 
         // we can just call .unwrap() to assert this was a success
@@ -167,8 +197,8 @@ mod tests {
 
         // it worked, let's query the state
         let res = query(deps.as_ref(), mock_env(), QueryMsg::GetPoll { poll_id: 0 }).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(17, value.count);
+        let value: u64 = from_binary(&res).unwrap();
+        assert_eq!(1, value);
     }
     #[test]
     fn vote() {

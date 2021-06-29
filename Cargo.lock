@@ -152,16 +152,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmwasm-storage"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13b03dc324ef7b5bce224e096d67bc67e12aadc8fbacb7c8c796eac40cf7c4b8"
-dependencies = [
- "cosmwasm-std 0.14.0",
- "serde",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -398,15 +388,15 @@ checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
 
 [[package]]
 name = "loterra-dao"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std 0.14.0",
- "cosmwasm-storage",
  "cw-storage-plus",
  "loterra-staking-contract",
  "schemars",
  "serde",
+ "terra-cosmwasm",
  "thiserror",
 ]
 

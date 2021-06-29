@@ -1,8 +1,7 @@
-use crate::error::ContractError;
 use crate::state::{PollStatus, State, POLL, STATE};
 use cosmwasm_std::{attr, Addr, DepsMut, Response, StdResult, Uint128};
 
-pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> Result<Response, ContractError> {
+pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> StdResult<Response> {
     POLL.update(
         deps.storage,
         &poll_id.to_be_bytes(),
