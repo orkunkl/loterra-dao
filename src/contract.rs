@@ -473,6 +473,12 @@ fn try_reject(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdRe
         }
     })?;
 
+    /*
+       TODO: Build collateral wasm send
+        Also we need to check what we can do with this collateral.
+        Probably send it to the lottery contract???
+    */
+
     Ok(Response {
         submessages: vec![],
         messages: vec![],
@@ -562,6 +568,8 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
 
     /*
        TODO: Build this test
+        Also we need to check what we can do with this collateral.
+        Probably send it to the lottery contract???
     */
     let mut msg = vec![];
     if poll.status == PollStatus::Passed {
