@@ -359,7 +359,7 @@ pub fn try_create_poll(
         recipient: proposal_human_address,
         migration: migration_to,
         collateral: sent,
-        applied: false
+        applied: false,
     };
 
     // Save poll
