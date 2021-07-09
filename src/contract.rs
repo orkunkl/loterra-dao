@@ -1,16 +1,18 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, Addr, Binary, CanonicalAddr, ContractResult, CosmosMsg, Deps,
-    DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg,
-    SubcallResponse, Uint128, Uint64, WasmMsg, WasmQuery,
+    attr, entry_point, to_binary, Binary, ContractResult, CosmosMsg, Deps, DepsMut, Env,
+    MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg, SubcallResponse, Uint128,
+    WasmMsg, WasmQuery,
 };
 
 use crate::error::ContractError;
 use crate::helpers::{reject_proposal, total_weight, user_total_weight};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, GetPollResponse, ConfigResponse, StateResponse};
+use crate::msg::{
+    ConfigResponse, ExecuteMsg, GetPollResponse, InstantiateMsg, QueryMsg, StateResponse,
+};
 use crate::state::{
     Config, Migration, PollInfoState, PollStatus, Proposal, State, CONFIG, POLL, POLL_VOTE, STATE,
 };
-use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
+use cw20::{BalanceResponse, Cw20QueryMsg};
 use std::ops::Add;
 
 const MAX_DESCRIPTION_LEN: u64 = 255;
@@ -481,7 +483,7 @@ fn try_reject(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdRe
 
 fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdResult<Response> {
     // Load storage
-    let mut state = STATE.load(deps.storage)?;
+    let state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
     let poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
 
@@ -588,7 +590,10 @@ pub fn loterra_instance_reply(
             state.loterry_address = Some(deps.api.addr_canonicalize(&contract_address.as_str())?);
             STATE.save(deps.storage, &state)?;
 
-            let update = WasmMsg::UpdateAdmin { contract_addr:contract_address.clone(), admin: contract_address.clone() };
+            let update = WasmMsg::UpdateAdmin {
+                contract_addr: contract_address.clone(),
+                admin: contract_address.clone(),
+            };
 
             Ok(Response {
                 submessages: vec![],
@@ -596,7 +601,7 @@ pub fn loterra_instance_reply(
                 attributes: vec![
                     attr("lottery-address", contract_address.clone()),
                     attr("lottery-instantiate", "success"),
-                    attr("lottery-update-admin", contract_address)
+                    attr("lottery-update-admin", contract_address),
                 ],
                 data: None,
             })
@@ -629,7 +634,7 @@ fn query_poll(deps: Deps, poll_id: u64) -> StdResult<GetPollResponse> {
             return Err(StdError::generic_err("Not found"));
         }
     }
-        .unwrap();
+    .unwrap();
 
     Ok(GetPollResponse {
         creator: deps.api.addr_humanize(&poll.creator)?,
@@ -646,7 +651,7 @@ fn query_poll(deps: Deps, poll_id: u64) -> StdResult<GetPollResponse> {
         proposal: poll.proposal,
         migration: poll.migration,
         recipient: poll.recipient,
-        collateral: poll.collateral
+        collateral: poll.collateral,
     })
 }
 

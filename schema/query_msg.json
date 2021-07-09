@@ -3,13 +3,50 @@
   "title": "QueryMsg",
   "anyOf": [
     {
+      "description": "Query config",
       "type": "object",
       "required": [
-        "get_count"
+        "Config"
       ],
       "properties": {
-        "get_count": {
+        "Config": {
           "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Query state",
+      "type": "object",
+      "required": [
+        "State"
+      ],
+      "properties": {
+        "State": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Query poll",
+      "type": "object",
+      "required": [
+        "GetPoll"
+      ],
+      "properties": {
+        "GetPoll": {
+          "type": "object",
+          "required": [
+            "poll_id"
+          ],
+          "properties": {
+            "poll_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
         }
       },
       "additionalProperties": false

@@ -1,8 +1,6 @@
-use crate::msg::{HolderResponse, HoldersResponse, LoterraStaking, StakingStateResponse};
-use crate::state::{Config, PollStatus, State, POLL, STATE};
-use cosmwasm_std::{
-    attr, to_binary, Addr, DepsMut, Response, StdError, StdResult, Storage, Uint128, WasmQuery,
-};
+use crate::msg::{HolderResponse, LoterraStaking, StakingStateResponse};
+use crate::state::{Config, PollStatus, POLL};
+use cosmwasm_std::{attr, to_binary, Addr, DepsMut, Response, StdResult, Uint128, WasmQuery};
 
 pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> StdResult<Response> {
     POLL.update(
@@ -54,7 +52,6 @@ pub fn user_total_weight(deps: &DepsMut, config: &Config, address: &Addr) -> Uin
 }
 
 pub fn total_weight(deps: &DepsMut, config: &Config) -> Uint128 {
-
     let msg = LoterraStaking::State {};
     let loterra_human = deps
         .api
@@ -64,7 +61,7 @@ pub fn total_weight(deps: &DepsMut, config: &Config) -> Uint128 {
         contract_addr: loterra_human.to_string(),
         msg: to_binary(&msg).unwrap(),
     }
-        .into();
+    .into();
 
     let loterra_balance: StakingStateResponse = deps.querier.query(&query).unwrap();
     loterra_balance.total_balance

@@ -1,8 +1,7 @@
-use crate::state::{Migration, PollStatus, Proposal, Config, State};
+use crate::state::{Config, Migration, PollStatus, Proposal, State};
 use cosmwasm_std::{Addr, Binary, Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::ops::Add;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
