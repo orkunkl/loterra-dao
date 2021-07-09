@@ -490,8 +490,8 @@ pub fn loterra_instance_reply(
                 submessages: vec![],
                 messages: vec![],
                 attributes: vec![
-                    attr("staking-address", contract_address),
-                    attr("staking-instantiate", "success"),
+                    attr("lottery-address", contract_address),
+                    attr("lottery-instantiate", "success"),
                 ],
                 data: None,
             })
