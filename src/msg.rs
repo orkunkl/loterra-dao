@@ -10,6 +10,7 @@ pub struct InstantiateMsg {
     pub message: Binary,
     pub label: String,
     pub staking_contract_address: String,
+    pub cw20_contract_address: String,
     pub poll_default_end_height: u64,
     pub required_amount: Uint128,
     pub denom: String,

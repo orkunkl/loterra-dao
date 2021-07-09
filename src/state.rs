@@ -9,6 +9,7 @@ pub struct Config {
     pub admin: CanonicalAddr,
     pub poll_default_end_height: u64,
     pub staking_contract_address: CanonicalAddr,
+    pub cw20_contract_address: CanonicalAddr,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
@@ -60,7 +61,7 @@ pub enum Proposal {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Migration {
     pub contract_addr: String,
-    pub new_code_id: U64,
+    pub new_code_id: u64,
     pub msg: Binary,
 }
 

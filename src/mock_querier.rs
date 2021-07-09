@@ -155,7 +155,7 @@ impl WasmMockQuerier {
                         };
                         return SystemResult::Ok(ContractResult::from(to_binary(&msg_holders)));
                     } else if msg == &Binary::from(
-                        r#"{"holder":{"address":"terra1q88h7ewu6h3am4mxxeqhu3srt7zw4z5s20qu3k"}}"#
+                        r#"{"Holder":{"address":"addr0000"}}"#
                             .as_bytes(),
                     ) {
                         let msg_balance = GetHolderResponse {

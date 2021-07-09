@@ -5,6 +5,7 @@ use crate::state::{Config, PollStatus, State, CONFIG, POLL, POLL_VOTE, STATE, Pr
 use crate::helpers::user_total_weight;
 use std::ops::Add;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
+use crate::error::ContractError;
 
 const MAX_DESCRIPTION_LEN: u64 = 255;
 const MIN_DESCRIPTION_LEN: u64 = 6;
@@ -25,6 +26,10 @@ pub fn instantiate(
         staking_contract_address: deps
             .api
             .addr_canonicalize(msg.staking_contract_address.as_str())
+            .unwrap(),
+        cw20_contract_address: deps
+            .api
+            .addr_canonicalize(msg.cw20_contract_address.as_str())
             .unwrap(),
     };
     CONFIG.save(deps.storage, &config)?;
@@ -73,13 +78,13 @@ pub fn execute(
 ) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Vote { poll_id, approve } => try_vote(deps, info, env, poll_id, approve),
+        ExecuteMsg::Poll {description, proposal, prizes_per_ranks, amount, recipient, migration} => try_create_poll(deps, info, env, description, proposal, prizes_per_ranks, amount, recipient, migration),
         _ => Ok(Response {
             submessages: vec![],
             messages: vec![],
             attributes: vec![],
             data: None,
         }),
-        ExecuteMsg::Poll {description, proposal, prizes_per_ranks, amount, recipient, migration} => try_create_poll(deps, info, env, description, proposal, prizes_per_ranks, amount, recipient, migration)
     }
 }
 pub fn try_create_poll(
@@ -94,6 +99,7 @@ pub fn try_create_poll(
     migration: Option<Migration>
 ) -> StdResult<Response> {
     let mut state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
     // Increment and get the new poll id for bucket key
     let poll_id = state.poll_id.checked_add(1).unwrap();
     // Set the new counter
@@ -260,12 +266,7 @@ pub fn try_create_poll(
     } else if let Proposal::DaoFunding = proposal {
         match amount {
             Some(amount) => {
-                let sender = deps.api.addr_canonicalize(&info.sender.as_str())?;
-                let contract_address =
-                    deps.api.addr_canonicalize(&env.contract.address.as_str())?;
-                if state.admin != contract_address && state.admin != sender {
-                    return Err(StdError::generic_err("Unauthorized"));
-                }
+
                 if amount.is_zero() {
                     return Err(StdError::generic_err("Amount be higher than 0".to_string()));
                 }
@@ -276,7 +277,7 @@ pub fn try_create_poll(
                 };
                 let loterra_human = deps
                     .api
-                    .addr_humanize(&state.loterra_cw20_contract_address)?;
+                    .addr_humanize(&config.cw20_contract_address)?;
 
                 let res_balance = WasmQuery::Smart {
                     contract_addr: loterra_human.to_string(),
@@ -305,15 +306,9 @@ pub fn try_create_poll(
         }
         Proposal::DaoFunding
     } else if let Proposal::StakingContractMigration = proposal {
-        match recipient {
-            Some(migration_address) => {
-                let sender = deps.api.addr_canonicalize(&info.sender.as_str())?;
-                let contract_address =
-                    deps.api.addr_canonicalize(&env.contract.address.as_str())?;
-                if state.admin != contract_address && state.admin != sender {
-                    return Err(StdError::generic_err("Unauthorized"));
-                }
-                proposal_human_address = Some(migration_address);
+        match migration {
+            Some(migration) => {
+                migration_to = Some(migration);
             }
             None => {
                 return Err(StdError::generic_err(
@@ -335,7 +330,7 @@ pub fn try_create_poll(
     let new_poll = PollInfoState {
         creator: sender_to_canonical,
         status: PollStatus::InProgress,
-        end_height: env.block.height + state.poll_default_end_height,
+        end_height: env.block.height + config.poll_default_end_height,
         start_height: env.block.height,
         description,
         weight_yes_vote: Uint128::zero(),
@@ -350,7 +345,7 @@ pub fn try_create_poll(
     };
 
     // Save poll
-    POLL.save(deps.storage, &state.poll_count.to_be_bytes(), &new_poll)?;
+    POLL.save(deps.storage, &state.poll_id.to_be_bytes(), &new_poll)?;
 
     // Save state
     STATE.save(deps.storage, &state)?;
@@ -393,7 +388,7 @@ pub fn try_vote(
 
     POLL_VOTE.update(
         deps.storage,
-        (&sender, &poll_id.to_be_bytes()),
+        (&poll_id.to_be_bytes(), &sender),
         |exist| match exist {
             None => Ok(approve),
             Some(_) => Err(StdError::generic_err("already voted")),
@@ -454,7 +449,7 @@ pub fn try_reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Respons
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
-    let config = read_config(deps.storage)?;
+
     match msg.id {
         0 => loterra_instance_reply(deps, env, msg.result),
         _ => Err(ContractError::Unauthorized {}),
@@ -539,6 +534,7 @@ mod tests {
             message: Default::default(),
             label: "".to_string(),
             staking_contract_address: "staking".to_string(),
+            cw20_contract_address: "cw20".to_string(),
             poll_default_end_height: 0,
             required_amount: Uint128(100_000_000),
             denom: "uusd".to_string()
@@ -556,6 +552,7 @@ mod tests {
             message: Default::default(),
             label: "Hello world contract".to_string(),
             staking_contract_address: "staking".to_string(),
+            cw20_contract_address: "cw20".to_string(),
             poll_default_end_height: 0,
             required_amount: Uint128(100_000_000),
             denom: "uusd".to_string()
@@ -569,7 +566,7 @@ mod tests {
 
     mod vote {
         use super::*;
-        use cosmwasm_std::{Api, Decimal, Coin};
+        use cosmwasm_std::{Api, Decimal, Coin, Event};
         use crate::state::{PollInfoState, Proposal};
 
         // handle_vote
@@ -582,7 +579,9 @@ mod tests {
                 recipient: None,
                 migration: None
             };
-            let _res = execute(deps, mock_env(), mock_info("addr0000", &[]), msg).unwrap();
+
+            let _res = execute(deps, mock_env(), mock_info("addr0000", &[Coin{ denom: "uusd".to_string(), amount: Uint128(100) }]), msg).unwrap();
+            println!("{:?}", _res);
         }
         #[test]
         fn do_not_send_funds() {
@@ -610,7 +609,7 @@ mod tests {
             println!("{:?}", res);
             match res {
                 Err(StdError::GenericErr { msg, .. }) => {
-                    assert_eq!(msg, "Do not send funds with vote")
+                    assert_eq!(msg, "do not send funds")
                 }
                 _ => panic!("Unexpected error"),
             }
@@ -652,7 +651,7 @@ mod tests {
             let res = execute(deps.as_mut(), env, info, msg);
             println!("{:?}", res);
             match res {
-                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "Proposal is deactivated"),
+                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "poll closed"),
                 _ => panic!("Unexpected error"),
             }
         }
@@ -680,7 +679,7 @@ mod tests {
             let res = execute(deps.as_mut(), env, info, msg);
             println!("{:?}", res);
             match res {
-                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "Proposal expired"),
+                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "poll expired"),
                 _ => panic!("Unexpected error"),
             }
         }
@@ -709,7 +708,7 @@ mod tests {
             };
             let res = execute(deps.as_mut(), env, info, msg);
             match res {
-                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "Only stakers can vote"),
+                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "only stakers can vote"),
                 _ => panic!("Unexpected error"),
             }
         }
@@ -762,7 +761,7 @@ mod tests {
             // Try to vote multiple times
             let res = execute(deps.as_mut(), env, info, msg);
             match res {
-                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "Already voted"),
+                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "already voted"),
                 _ => panic!("Unexpected error"),
             }
         }
@@ -864,3 +863,6 @@ mod tests {
         assert_eq!(5, value.count);
     } */
 }
+
+//let result = ContractResult::Ok(SubcallResponse{ events: vec![Event{ kind: "instantiate_contract".to_string(), attributes: vec![attr("contract_address", "loterra")] }], data: None });
+//let reply = reply(deps.as_mut(), env.clone(), Reply{ id: 0, result }).unwrap();
