@@ -1,4 +1,4 @@
-use crate::msg::{HolderResponse, HoldersResponse};
+use crate::msg::{HolderResponse, HoldersResponse, StakingStateResponse};
 use cosmwasm_std::testing::{MockApi, MockQuerier, MockStorage, MOCK_CONTRACT_ADDR};
 use cosmwasm_std::{
     from_slice, to_binary, Binary, Coin, ContractResult, Decimal, OwnedDeps, Querier,
@@ -158,10 +158,17 @@ impl WasmMockQuerier {
                         == &Binary::from(r#"{"Holder":{"address":"addr0000"}}"#.as_bytes())
                     {
                         let msg_balance = GetHolderResponse {
-                            address: "terra1q88h7ewu6h3am4mxxeqhu3srt7zw4z5s20q007".to_string(),
+                            address: "addr0000".to_string(),
                             balance: self.holder_response.balance,
                             index: self.holder_response.index,
                             pending_rewards: self.holder_response.pending_rewards,
+                        };
+                        return SystemResult::Ok(ContractResult::from(to_binary(&msg_balance)));
+                    } else if msg == &Binary::from(r#"{"State":{}}"#.as_bytes()) {
+                        let msg_balance = StakingStateResponse {
+                            global_index: Decimal::percent(2),
+                            total_balance: Uint128(1_000_000_000),
+                            prev_reward_balance: Uint128(1_000_000_000),
                         };
                         return SystemResult::Ok(ContractResult::from(to_binary(&msg_balance)));
                     }

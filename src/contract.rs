@@ -7,7 +7,8 @@ use cosmwasm_std::{
 use crate::error::ContractError;
 use crate::helpers::{reject_proposal, total_weight, user_total_weight};
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, GetPollResponse, InstantiateMsg, QueryMsg, StateResponse,
+    ConfigResponse, ExecuteMsg, GetPollResponse, InstantiateMsg, LoterraStaking, QueryMsg,
+    StakingStateResponse, StateResponse,
 };
 use crate::state::{
     Config, Migration, PollInfoState, PollStatus, Proposal, State, CONFIG, POLL, POLL_VOTE, STATE,
@@ -498,12 +499,18 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
     if poll.status != PollStatus::InProgress {
         return Err(StdError::generic_err("Unauthorized"));
     }
+    let query_total_stake = LoterraStaking::State {};
+    let query = WasmQuery::Smart {
+        contract_addr: deps
+            .api
+            .addr_humanize(&config.staking_contract_address)?
+            .to_string(),
+        msg: to_binary(&query_total_stake)?,
+    };
+    let res_total_bonded: StakingStateResponse = deps.querier.query(&query.into())?;
 
     let total_weight_bonded = total_weight(&deps, &config);
     let total_vote_weight = poll.weight_yes_vote.add(poll.weight_no_vote);
-
-    let total_vote_weight_in_percentage =
-        total_vote_weight.u128() * 100_u128 / total_vote_weight.u128();
 
     let total_yes_weight_percentage = if !poll.weight_yes_vote.is_zero() {
         poll.weight_yes_vote.u128() * 100 / total_vote_weight.u128()
@@ -523,6 +530,13 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
             return Err(StdError::generic_err("Proposal still in progress"));
         }
     }
+    // Get the quorum min 10%
+    let total_vote_weight_in_percentage = if !total_vote_weight.is_zero() {
+        total_vote_weight.u128() * 100_u128 / res_total_bonded.total_balance.u128()
+    } else {
+        0_u128
+    };
+    println!("{}", total_vote_weight_in_percentage);
 
     // Reject the proposal
     // Based on the recommendation of security audit
@@ -1495,6 +1509,606 @@ mod tests {
                 Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "already voted"),
                 _ => panic!("Unexpected error"),
             }
+        }
+    }
+    mod reject {
+        use super::*;
+        use cosmwasm_std::Coin;
+
+        // handle_reject
+        fn create_poll(deps: DepsMut) {
+            let msg = ExecuteMsg::Poll {
+                description: "This is my first proposal".to_string(),
+                proposal: Proposal::LotteryEveryBlockTime,
+                amount: Option::from(Uint128(22)),
+                recipient: None,
+                prizes_per_ranks: None,
+                migration: None,
+            };
+            let _res = execute(
+                deps,
+                mock_env(),
+                mock_info(
+                    "addr0000",
+                    &[Coin {
+                        denom: "uusd".to_string(),
+                        amount: Uint128(100_000_000),
+                    }],
+                ),
+                msg,
+            )
+            .unwrap();
+        }
+        #[test]
+        fn do_not_send_funds() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+            let env = mock_env();
+            let info = mock_info(
+                before_all.default_sender.as_str().clone(),
+                &[Coin {
+                    denom: "ust".to_string(),
+                    amount: Uint128(1_000),
+                }],
+            );
+            let msg = ExecuteMsg::RejectPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg);
+            println!("{:?}", res);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => {
+                    assert_eq!(msg, "Do not send funds with reject proposal")
+                }
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn poll_expired() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height + 1;
+            let msg = ExecuteMsg::RejectPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg);
+            println!("{:?}", res);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "Proposal expired"),
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn only_creator_can_reject() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+            let msg = ExecuteMsg::RejectPoll { poll_id: 1 };
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender_two.as_str().clone(), &[]);
+            let res = execute(deps.as_mut(), env, info, msg);
+
+            println!("{:?}", res);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => {
+                    assert_eq!(msg, "Unauthorized");
+                }
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn success() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+            let msg = ExecuteMsg::RejectPoll { poll_id: 1 };
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+            println!("{:?}", res);
+            assert_eq!(res.messages.len(), 0);
+            assert_eq!(res.attributes.len(), 2);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            assert_eq!(poll_state.status, PollStatus::RejectedByCreator);
+        }
+    }
+
+    mod present {
+        use super::*;
+        use cosmwasm_std::{BankMsg, Coin, CosmosMsg, Decimal};
+
+        // handle_present
+        fn create_poll(deps: DepsMut) {
+            let msg = ExecuteMsg::Poll {
+                description: "This is my first proposal".to_string(),
+                proposal: Proposal::LotteryEveryBlockTime,
+                amount: Some(Uint128(22)),
+                recipient: None,
+                prizes_per_ranks: None,
+                migration: None,
+            };
+            let _res = execute(
+                deps,
+                mock_env(),
+                mock_info(
+                    "addr0000",
+                    &[Coin {
+                        denom: "uusd".to_string(),
+                        amount: Uint128(100_000_000),
+                    }],
+                ),
+                msg,
+            )
+            .unwrap();
+        }
+        fn create_poll_security_migration(deps: DepsMut) {
+            let msg = ExecuteMsg::Poll {
+                description: "This is my first proposal".to_string(),
+                proposal: Proposal::SecurityMigration,
+                amount: None,
+                recipient: Some("newAddress".to_string()),
+                prizes_per_ranks: None,
+                migration: Some(Migration {
+                    contract_addr: "new".to_string(),
+                    new_code_id: 0,
+                    msg: Default::default(),
+                }),
+            };
+            let _res = execute(
+                deps,
+                mock_env(),
+                mock_info(
+                    "addr0002",
+                    &[Coin {
+                        denom: "uusd".to_string(),
+                        amount: Uint128(100_000_000),
+                    }],
+                ),
+                msg,
+            )
+            .unwrap();
+            println!("{:?}", _res);
+        }
+        fn create_poll_dao_funding(deps: DepsMut) {
+            let msg = ExecuteMsg::Poll {
+                description: "This is my first proposal".to_string(),
+                proposal: Proposal::DaoFunding,
+                amount: Some(Uint128(22)),
+                recipient: None,
+                prizes_per_ranks: None,
+                migration: None,
+            };
+            let _res = execute(
+                deps,
+                mock_env(),
+                mock_info(
+                    "addr0002",
+                    &[Coin {
+                        denom: "uusd".to_string(),
+                        amount: Uint128(100_000_000),
+                    }],
+                ),
+                msg,
+            )
+            .unwrap();
+        }
+        fn create_poll_statking_contract_migration(deps: DepsMut) {
+            let msg = ExecuteMsg::Poll {
+                description: "This is my first proposal".to_string(),
+                proposal: Proposal::StakingContractMigration,
+                amount: None,
+                recipient: Some("newAddress".to_string()),
+                prizes_per_ranks: None,
+                migration: None,
+            };
+            let _res = execute(
+                deps,
+                mock_env(),
+                mock_info(
+                    "addr0002",
+                    &[Coin {
+                        denom: "uusd".to_string(),
+                        amount: Uint128(100_000_000),
+                    }],
+                ),
+                msg,
+            )
+            .unwrap();
+            println!("{:?}", _res);
+        }
+        #[test]
+        fn do_not_send_funds() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(
+                before_all.default_sender.as_str().clone(),
+                &[Coin {
+                    denom: "ust".to_string(),
+                    amount: Uint128(9_000_000),
+                }],
+            );
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg);
+            println!("{:?}", res);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => {
+                    assert_eq!(msg, "Do not send funds with present proposal")
+                }
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn poll_expired() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+            // Save to storage
+
+            POLL.update(
+                deps.as_mut().storage,
+                &1_u64.to_be_bytes(),
+                |poll| -> StdResult<PollInfoState> {
+                    match poll {
+                        None => panic!("Unexpected error"),
+                        Some(poll_state) => {
+                            let mut poll_data = poll_state;
+                            // Update the status to passed
+                            poll_data.status = PollStatus::Rejected;
+                            Ok(poll_data)
+                        }
+                    }
+                },
+            )
+            .unwrap();
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg);
+            println!("{:?}", res);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => {
+                    assert_eq!(msg, "Unauthorized")
+                }
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn poll_still_in_progress() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            POLL.update(
+                deps.as_mut().storage,
+                &1_u64.to_be_bytes(),
+                |poll| -> StdResult<PollInfoState> {
+                    match poll {
+                        None => panic!("Unexpected error"),
+                        Some(poll_state) => {
+                            let mut poll_data = poll_state;
+                            // Update the status to passed
+                            poll_data.end_height = env.block.height + 100;
+                            Ok(poll_data)
+                        }
+                    }
+                },
+            )
+            .unwrap();
+            let res = execute(deps.as_mut(), env, info, msg);
+            println!("{:?}", res);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => {
+                    assert_eq!(msg, "Proposal still in progress")
+                }
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn success_with_reject() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            deps.querier.with_token_balances(Uint128(200_000));
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height + 1;
+
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            assert_eq!(res.attributes.len(), 3);
+            assert_eq!(res.messages.len(), 0);
+
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            assert_eq!(poll_state.status, PollStatus::Rejected);
+        }
+
+        #[test]
+        fn success_with_passed() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            //deps.querier.with_token_balances(Uint128(200_000));
+            deps.querier.with_holder(
+                before_all.default_sender.clone(),
+                Uint128(100_000_000),
+                Decimal::zero(),
+                Decimal::zero(),
+            );
+            default_init(deps.as_mut());
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::Vote {
+                poll_id: 1,
+                approve: true,
+            };
+
+            let _res = execute(deps.as_mut(), env, info, msg);
+
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height + 1;
+
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            assert_eq!(res.attributes.len(), 3);
+            assert_eq!(res.messages.len(), 0);
+
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            assert_eq!(poll_state.status, PollStatus::Passed);
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll_security_migration(deps.as_mut());
+            let msg = ExecuteMsg::Vote {
+                poll_id: 2,
+                approve: true,
+            };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            println!("{:?}", res);
+        }
+        #[test]
+        fn success_with_proposal_not_expired_yet_and_more_50_percent_weight_vote() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            // deps.querier.with_token_balances(Uint128(200_000));
+            deps.querier.with_holder(
+                before_all.default_sender.clone(),
+                Uint128(500_000_000),
+                Decimal::zero(),
+                Decimal::zero(),
+            );
+            default_init(deps.as_mut());
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::Vote {
+                poll_id: 1,
+                approve: true,
+            };
+
+            let _res = execute(deps.as_mut(), env, info, msg);
+
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height - 1000;
+
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            assert_eq!(res.attributes.len(), 3);
+            assert_eq!(res.messages.len(), 0);
+
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            assert_eq!(poll_state.status, PollStatus::Passed);
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll_security_migration(deps.as_mut());
+            let msg = ExecuteMsg::Vote {
+                poll_id: 2,
+                approve: true,
+            };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            println!("{:?}", res);
+        }
+
+        #[test]
+        fn error_with_proposal_not_expired_yet_and_less_50_percent_weight_vote() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            deps.querier.with_token_balances(Uint128(200_000));
+            deps.querier.with_holder(
+                before_all.default_sender.clone(),
+                Uint128(1_000),
+                Decimal::zero(),
+                Decimal::zero(),
+            );
+            default_init(deps.as_mut());
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::Vote {
+                poll_id: 1,
+                approve: true,
+            };
+
+            let _res = execute(deps.as_mut(), env, info, msg);
+
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height - 1000;
+
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg);
+            match res {
+                Err(StdError::GenericErr { msg, .. }) => {
+                    assert_eq!(msg, "Proposal still in progress")
+                }
+                _ => panic!("Unexpected error"),
+            }
+        }
+        #[test]
+        fn poll_expired_but_quorum_not_reached() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            //deps.querier.with_token_balances(Uint128(200_000));
+            deps.querier.with_holder(
+                before_all.default_sender.clone(),
+                Uint128(99_000_000),
+                Decimal::zero(),
+                Decimal::zero(),
+            );
+            default_init(deps.as_mut());
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::Vote {
+                poll_id: 1,
+                approve: true,
+            };
+
+            let _res = execute(deps.as_mut(), env, info, msg);
+
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height + 1000;
+
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            assert_eq!(poll_state.status, PollStatus::Rejected);
+        }
+        #[test]
+        fn poll_expired_and_quorum_reached() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            //deps.querier.with_token_balances(Uint128(200_000));
+            deps.querier.with_holder(
+                before_all.default_sender.clone(),
+                Uint128(100_000_000),
+                Decimal::zero(),
+                Decimal::zero(),
+            );
+            default_init(deps.as_mut());
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            create_poll(deps.as_mut());
+
+            let env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::Vote {
+                poll_id: 1,
+                approve: true,
+            };
+
+            let _res = execute(deps.as_mut(), env, info, msg);
+
+            let mut env = mock_env();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height + 1000;
+
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            assert_eq!(poll_state.status, PollStatus::Passed);
         }
     }
     /*
