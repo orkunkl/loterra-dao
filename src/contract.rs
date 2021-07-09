@@ -553,6 +553,7 @@ mod tests {
                 amount: Option::from(Uint128(22)),
                 prizes_per_ranks: None,
                 recipient: None,
+                migration: None
             };
             let _res = execute(deps, mock_env(), mock_info("addr0000", &[]), msg).unwrap();
         }
