@@ -15,6 +15,7 @@ pub struct State {
     pub required_collateral: Uint128,
     pub denom: String,
     pub poll_id: u64,
+    pub loterry_address: Option<CanonicalAddr>
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct PollInfoState {

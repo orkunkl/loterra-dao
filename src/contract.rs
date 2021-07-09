@@ -1,4 +1,4 @@
-use cosmwasm_std::{attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Uint64, WasmMsg, StdError, SubMsg, CosmosMsg, ReplyOn, WasmQuery, Reply, ContractResult, SubcallResponse};
+use cosmwasm_std::{attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Uint64, WasmMsg, StdError, SubMsg, CosmosMsg, ReplyOn, WasmQuery, Reply, ContractResult, SubcallResponse, CanonicalAddr};
 
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::state::{Config, PollStatus, State, CONFIG, POLL, POLL_VOTE, STATE, Proposal, PollInfoState, Migration};
@@ -29,7 +29,12 @@ pub fn instantiate(
     };
     CONFIG.save(deps.storage, &config)?;
 
-    let state = State{ required_collateral: msg.required_amount, denom: msg.denom, poll_id: 0 };
+    let state = State{
+        required_collateral: msg.required_amount,
+        denom: msg.denom,
+        poll_id: 0,
+        loterry_address: None
+    };
     STATE.save(deps.storage, &state)?;
 
     let wasm_msg = WasmMsg::Instantiate {
@@ -467,7 +472,29 @@ pub fn loterra_instance_reply(
      */
     match msg {
         ContractResult::Ok(subcall) => {
-            Ok(ContractResult::Ok())
+            let contract_address = subcall
+                .events
+                .into_iter()
+                .find(|e| e.kind == "instantiate_contract")
+                .and_then(|ev| {
+                    ev.attributes
+                        .into_iter()
+                        .find(|attr| attr.key == "contract_address")
+                        .and_then(|addr| Some(addr.value))
+                })
+                .unwrap();
+            state.loterry_address = Some(deps.api.addr_canonicalize(&contract_address.as_str())?);
+            STATE.save(deps.storage, &state)?;
+
+            Ok(Response {
+                submessages: vec![],
+                messages: vec![],
+                attributes: vec![
+                    attr("staking-address", contract_address),
+                    attr("staking-instantiate", "success"),
+                ],
+                data: None,
+            })
         }
         ContractResult::Err(_) => Err(ContractError::Unauthorized {}),
     }
