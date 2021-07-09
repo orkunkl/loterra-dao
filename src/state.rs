@@ -48,7 +48,7 @@ pub enum Proposal {
     LotteryEveryBlockTime,
     HolderFeePercentage,
     DrandWorkerFeePercentage,
-    PrizePerRank,
+    PrizesPerRanks,
     JackpotRewardPercentage,
     AmountToRegister,
     SecurityMigration,
