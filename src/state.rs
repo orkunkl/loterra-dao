@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{CanonicalAddr, Storage, Uint128, Binary};
+use cosmwasm_std::{Binary, CanonicalAddr, Storage, Uint128};
 use cw_storage_plus::{Item, Map};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -16,7 +16,7 @@ pub struct State {
     pub required_collateral: Uint128,
     pub denom: String,
     pub poll_id: u64,
-    pub loterry_address: Option<CanonicalAddr>
+    pub loterry_address: Option<CanonicalAddr>,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct PollInfoState {
@@ -33,7 +33,8 @@ pub struct PollInfoState {
     pub prizes_per_ranks: Vec<u8>,
     pub proposal: Proposal,
     pub recipient: Option<String>,
-    pub migration: Option<Migration>
+    pub migration: Option<Migration>,
+    pub collateral: Uint128,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum PollStatus {

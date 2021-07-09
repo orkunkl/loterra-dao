@@ -1,16 +1,25 @@
-use cosmwasm_std::{attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Uint64, WasmMsg, StdError, SubMsg, CosmosMsg, ReplyOn, WasmQuery, Reply, ContractResult, SubcallResponse, CanonicalAddr};
+use cosmwasm_std::{
+    attr, entry_point, to_binary, Addr, Binary, CanonicalAddr, ContractResult, CosmosMsg, Deps,
+    DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg,
+    SubcallResponse, Uint128, Uint64, WasmMsg, WasmQuery,
+};
 
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{Config, PollStatus, State, CONFIG, POLL, POLL_VOTE, STATE, Proposal, PollInfoState, Migration};
-use crate::helpers::user_total_weight;
-use std::ops::Add;
-use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use crate::error::ContractError;
+use crate::helpers::{reject_proposal, total_weight, user_total_weight};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::state::{
+    Config, Migration, PollInfoState, PollStatus, Proposal, State, CONFIG, POLL, POLL_VOTE, STATE,
+};
+use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
+use std::ops::Add;
 
 const MAX_DESCRIPTION_LEN: u64 = 255;
 const MIN_DESCRIPTION_LEN: u64 = 6;
 const HOLDERS_MAX_REWARD: u8 = 20;
 const WORKER_MAX_REWARD: u8 = 10;
+const YES_WEIGHT: u128 = 50;
+const NO_WEIGHT: u128 = 33;
+const VOTE_WEIGHT: u128 = 10;
 // Note, you can use StdResult in some functions where you do not
 // make use of the custom errors
 #[entry_point]
@@ -34,11 +43,11 @@ pub fn instantiate(
     };
     CONFIG.save(deps.storage, &config)?;
 
-    let state = State{
+    let state = State {
         required_collateral: msg.required_amount,
         denom: msg.denom,
         poll_id: 0,
-        loterry_address: None
+        loterry_address: None,
     };
     STATE.save(deps.storage, &state)?;
 
@@ -49,11 +58,11 @@ pub fn instantiate(
         send: vec![],
         label: msg.label,
     };
-    let sub_message = SubMsg{
+    let sub_message = SubMsg {
         id: 0,
         msg: CosmosMsg::Wasm(wasm_msg),
         gas_limit: None,
-        reply_on: ReplyOn::Success
+        reply_on: ReplyOn::Success,
     };
 
     Ok(Response {
@@ -70,21 +79,29 @@ pub fn instantiate(
 
 // And declare a custom Error variant for the ones where you will want to make use of it
 #[entry_point]
-pub fn execute(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    msg: ExecuteMsg,
-) -> StdResult<Response> {
+pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Vote { poll_id, approve } => try_vote(deps, info, env, poll_id, approve),
-        ExecuteMsg::Poll {description, proposal, prizes_per_ranks, amount, recipient, migration} => try_create_poll(deps, info, env, description, proposal, prizes_per_ranks, amount, recipient, migration),
-        _ => Ok(Response {
-            submessages: vec![],
-            messages: vec![],
-            attributes: vec![],
-            data: None,
-        }),
+        ExecuteMsg::Poll {
+            description,
+            proposal,
+            prizes_per_ranks,
+            amount,
+            recipient,
+            migration,
+        } => try_create_poll(
+            deps,
+            info,
+            env,
+            description,
+            proposal,
+            prizes_per_ranks,
+            amount,
+            recipient,
+            migration,
+        ),
+        ExecuteMsg::PresentPoll { poll_id } => try_present(deps, info, env, poll_id),
+        ExecuteMsg::RejectPoll { poll_id } => try_reject(deps, info, env, poll_id),
     }
 }
 pub fn try_create_poll(
@@ -96,7 +113,7 @@ pub fn try_create_poll(
     prizes_per_ranks: Option<Vec<u8>>,
     amount: Option<Uint128>,
     recipient: Option<String>,
-    migration: Option<Migration>
+    migration: Option<Migration>,
 ) -> StdResult<Response> {
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
@@ -257,16 +274,13 @@ pub fn try_create_poll(
                 migration_to = Some(migration);
             }
             None => {
-                return Err(StdError::generic_err(
-                    "Migration is required".to_string(),
-                ));
+                return Err(StdError::generic_err("Migration is required".to_string()));
             }
         }
         Proposal::SecurityMigration
     } else if let Proposal::DaoFunding = proposal {
         match amount {
             Some(amount) => {
-
                 if amount.is_zero() {
                     return Err(StdError::generic_err("Amount be higher than 0".to_string()));
                 }
@@ -275,9 +289,7 @@ pub fn try_create_poll(
                 let msg_balance = Cw20QueryMsg::Balance {
                     address: env.contract.address.to_string(),
                 };
-                let loterra_human = deps
-                    .api
-                    .addr_humanize(&config.cw20_contract_address)?;
+                let loterra_human = deps.api.addr_humanize(&config.cw20_contract_address)?;
 
                 let res_balance = WasmQuery::Smart {
                     contract_addr: loterra_human.to_string(),
@@ -341,7 +353,8 @@ pub fn try_create_poll(
         prizes_per_ranks: proposal_prize_rank,
         proposal: proposal_type,
         recipient: proposal_human_address,
-        migration: migration_to
+        migration: migration_to,
+        collateral: sent,
     };
 
     // Save poll
@@ -426,30 +439,121 @@ pub fn try_vote(
         data: None,
     })
 }
-/*
-pub fn try_increment(deps: DepsMut) -> Result<Response, ContractError> {
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-        state.count += 1;
-        Ok(state)
+fn try_reject(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdResult<Response> {
+    let poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
+    let sender = deps.api.addr_canonicalize(&info.sender.as_str())?;
+
+    // Ensure the sender not sending funds accidentally
+    if !info.funds.is_empty() {
+        return Err(StdError::generic_err(
+            "Do not send funds with reject proposal",
+        ));
+    }
+    // Ensure end proposal height is not expired
+    if poll.end_height < env.block.height {
+        return Err(StdError::generic_err("Proposal expired"));
+    }
+    // Ensure only the creator can reject a proposal OR the status of the proposal is still in progress
+    if poll.creator != sender || poll.status != PollStatus::InProgress {
+        return Err(StdError::generic_err("Unauthorized"));
+    }
+
+    POLL.update(deps.storage, &poll_id.to_be_bytes(), |poll| match poll {
+        None => Err(StdError::generic_err("Poll not found")),
+        Some(poll_info) => {
+            let mut poll = poll_info;
+            poll.status = PollStatus::RejectedByCreator;
+            poll.end_height = env.block.height;
+            Ok(poll)
+        }
     })?;
 
-    Ok(Response::default())
+    Ok(Response {
+        submessages: vec![],
+        messages: vec![],
+        data: None,
+        attributes: vec![
+            attr("action", "creator reject the proposal"),
+            attr("poll_id", poll_id),
+        ],
+    })
 }
 
-pub fn try_reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Response, ContractError> {
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-        if info.sender != state.owner {
-            return Err(ContractError::Unauthorized {});
+fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdResult<Response> {
+    // Load storage
+    let mut state = read_state(deps.storage)?;
+    let poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
+
+    // Ensure the sender not sending funds accidentally
+    if !info.funds.is_empty() {
+        return Err(StdError::generic_err(
+            "Do not send funds with present proposal",
+        ));
+    }
+    // Ensure the proposal is still in Progress
+    if poll.status != PollStatus::InProgress {
+        return Err(StdError::generic_err("Unauthorized"));
+    }
+
+    let total_weight_bonded = total_weight(&deps, &state);
+    let total_vote_weight = poll.weight_yes_vote.add(poll.weight_no_vote);
+    let total_vote_weight_in_percentage =
+        total_vote_weight.u128() * 100 as u128 / total_vote_weight.u128();
+    let total_yes_weight_percentage = if !poll.weight_yes_vote.is_zero() {
+        poll.weight_yes_vote.u128() * 100 / total_vote_weight.u128()
+    } else {
+        0
+    };
+    let total_no_weight_percentage = if !poll.weight_no_vote.is_zero() {
+        poll.weight_no_vote.u128() * 100 / total_vote_weight.u128()
+    } else {
+        0
+    };
+
+    if poll.weight_yes_vote.add(poll.weight_no_vote).u128() * 100 / total_weight_bonded.u128() < 50
+    {
+        // Ensure the proposal is ended
+        if poll.end_height > env.block.height {
+            return Err(StdError::generic_err("Proposal still in progress"));
         }
-        state.count = count;
-        Ok(state)
+    }
+
+    // Reject the proposal
+    // Based on the recommendation of security audit
+    // We recommend to not reject votes based on the number of votes, but rather by the stake of the voters.
+    if total_yes_weight_percentage < YES_WEIGHT
+        || total_no_weight_percentage > NO_WEIGHT
+        || total_vote_weight_in_percentage < VOTE_WEIGHT
+    {
+        return reject_proposal(deps, poll_id);
+    }
+
+    // Save to storage
+    POLL.update(deps.storage, &poll_id.to_be_bytes(), |poll| match poll {
+        None => Err(StdError::generic_err("Not found")),
+        Some(poll_info) => {
+            let mut poll = poll_info;
+            poll.status = PollStatus::Passed;
+            Ok(poll)
+        }
     })?;
-    Ok(Response::default())
-} */
+
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response {
+        submessages: vec![],
+        messages: vec![],
+        data: None,
+        attributes: vec![
+            attr("action", "present poll"),
+            attr("poll_id", poll_id),
+            attr("poll_result", "approved"),
+        ],
+    })
+}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
-
     match msg.id {
         0 => loterra_instance_reply(deps, env, msg.result),
         _ => Err(ContractError::Unauthorized {}),
@@ -463,8 +567,8 @@ pub fn loterra_instance_reply(
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
     /*
-        TODO: Save the address of LoTerra contract lottery to the state
-     */
+       Save the address of LoTerra contract lottery to the state
+    */
     match msg {
         ContractResult::Ok(subcall) => {
             let contract_address = subcall
@@ -481,12 +585,15 @@ pub fn loterra_instance_reply(
             state.loterry_address = Some(deps.api.addr_canonicalize(&contract_address.as_str())?);
             STATE.save(deps.storage, &state)?;
 
+            let update = WasmMsg::UpdateAdmin { contract_addr:contract_address.clone(), admin: contract_address.clone() };
+
             Ok(Response {
                 submessages: vec![],
-                messages: vec![],
+                messages: vec![update.into()],
                 attributes: vec![
-                    attr("lottery-address", contract_address),
+                    attr("lottery-address", contract_address.clone()),
                     attr("lottery-instantiate", "success"),
+                    attr("lottery-update-admin", contract_address)
                 ],
                 data: None,
             })
@@ -494,7 +601,6 @@ pub fn loterra_instance_reply(
         ContractResult::Err(_) => Err(ContractError::Unauthorized {}),
     }
 }
-
 
 #[entry_point]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
@@ -511,9 +617,9 @@ fn query_count(deps: Deps) -> StdResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mock_querier::mock_dependencies_custom;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
     use cosmwasm_std::{coins, from_binary};
-    use crate::mock_querier::{mock_dependencies_custom};
 
     struct BeforeAll {
         default_sender: String,
@@ -537,7 +643,7 @@ mod tests {
             cw20_contract_address: "cw20".to_string(),
             poll_default_end_height: 0,
             required_amount: Uint128(100_000_000),
-            denom: "uusd".to_string()
+            denom: "uusd".to_string(),
         };
         let info = mock_info("creator", &coins(1000, "earth"));
         // we can just call .unwrap() to assert this was a success
@@ -555,7 +661,7 @@ mod tests {
             cw20_contract_address: "cw20".to_string(),
             poll_default_end_height: 0,
             required_amount: Uint128(100_000_000),
-            denom: "uusd".to_string()
+            denom: "uusd".to_string(),
         };
         let info = mock_info("creator", &coins(1000, "earth"));
 
@@ -566,8 +672,8 @@ mod tests {
 
     mod vote {
         use super::*;
-        use cosmwasm_std::{Api, Decimal, Coin, Event};
         use crate::state::{PollInfoState, Proposal};
+        use cosmwasm_std::{Api, Coin, Decimal, Event};
 
         // handle_vote
         fn create_poll(deps: DepsMut) {
@@ -577,10 +683,22 @@ mod tests {
                 amount: Option::from(Uint128(22)),
                 prizes_per_ranks: None,
                 recipient: None,
-                migration: None
+                migration: None,
             };
 
-            let _res = execute(deps, mock_env(), mock_info("addr0000", &[Coin{ denom: "uusd".to_string(), amount: Uint128(100) }]), msg).unwrap();
+            let _res = execute(
+                deps,
+                mock_env(),
+                mock_info(
+                    "addr0000",
+                    &[Coin {
+                        denom: "uusd".to_string(),
+                        amount: Uint128(100),
+                    }],
+                ),
+                msg,
+            )
+            .unwrap();
             println!("{:?}", _res);
         }
         #[test]
@@ -640,7 +758,7 @@ mod tests {
                     }
                 },
             )
-                .unwrap();
+            .unwrap();
 
             let env = mock_env();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
@@ -766,7 +884,7 @@ mod tests {
             }
         }
     }
-/*
+    /*
     fn default_init(deps: DepsMut) {
         let msg = InstantiateMsg {
             code_id: 0,
