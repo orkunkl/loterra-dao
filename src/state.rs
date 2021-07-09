@@ -11,7 +11,11 @@ pub struct Config {
     pub staking_contract_address: CanonicalAddr,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct State {}
+pub struct State {
+    pub required_collateral: Uint128,
+    pub denom: String,
+    pub poll_id: u64,
+}
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct PollInfoState {
     pub creator: CanonicalAddr,
@@ -24,9 +28,9 @@ pub struct PollInfoState {
     pub yes_vote: u64,
     pub no_vote: u64,
     pub amount: Uint128,
-    pub prize_rank: Vec<u8>,
+    pub prizes_per_ranks: Vec<u8>,
     pub proposal: Proposal,
-    pub migration_address: Option<CanonicalAddr>,
+    pub migration_address: Option<String>,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum PollStatus {
