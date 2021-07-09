@@ -1,4 +1,4 @@
-use crate::msg::{HolderResponse, HoldersResponse, LoterraStaking};
+use crate::msg::{HolderResponse, HoldersResponse, LoterraStaking, StakingStateResponse};
 use crate::state::{Config, PollStatus, State, POLL, STATE};
 use cosmwasm_std::{
     attr, to_binary, Addr, DepsMut, Response, StdError, StdResult, Storage, Uint128, WasmQuery,
@@ -53,31 +53,19 @@ pub fn user_total_weight(deps: &DepsMut, config: &Config, address: &Addr) -> Uin
     weight
 }
 
-pub fn total_weight(deps: &DepsMut, state: &State) -> Uint128 {
-    let mut weight = Uint128::zero();
+pub fn total_weight(deps: &DepsMut, config: &Config) -> Uint128 {
 
-    // Ensure sender have some reward tokens
-    let msg = Holders {
-        start_after: None,
-        limit: None,
-    };
-
+    let msg = LoterraStaking::State {};
     let loterra_human = deps
         .api
-        .addr_humanize(&state.loterra_staking_contract_address.clone())
+        .addr_humanize(&config.staking_contract_address.clone())
         .unwrap();
     let query = WasmQuery::Smart {
         contract_addr: loterra_human.to_string(),
         msg: to_binary(&msg).unwrap(),
     }
-    .into();
-    let loterra_balance: HoldersResponse = deps.querier.query(&query).unwrap();
+        .into();
 
-    for holder in loterra_balance.holders {
-        if !holder.balance.is_zero() {
-            weight += holder.balance;
-        }
-    }
-
-    weight
+    let loterra_balance: StakingStateResponse = deps.querier.query(&query).unwrap();
+    loterra_balance.total_balance
 }

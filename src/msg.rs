@@ -1,4 +1,4 @@
-use crate::state::{Migration, PollStatus, Proposal};
+use crate::state::{Migration, PollStatus, Proposal, Config, State};
 use cosmwasm_std::{Addr, Binary, Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,11 @@ pub enum ExecuteMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum QueryMsg {
-    /// Get poll
+    /// Query config
+    Config {},
+    /// Query state
+    State {},
+    /// Query poll
     GetPoll { poll_id: u64 },
 }
 
@@ -45,6 +49,13 @@ pub enum QueryMsg {
 pub enum LoterraStaking {
     // Get Holder from loterra staking contract
     Holder { address: String },
+    State {},
+}
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct StakingStateResponse {
+    pub global_index: Decimal,
+    pub total_balance: Uint128,
+    pub prev_reward_balance: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -77,3 +88,7 @@ pub struct GetPollResponse {
     pub migration: Option<Migration>,
     pub collateral: Uint128,
 }
+
+// We define a custom struct for each query response
+pub type ConfigResponse = Config;
+pub type StateResponse = State;

@@ -6,7 +6,7 @@ use cosmwasm_std::{
 
 use crate::error::ContractError;
 use crate::helpers::{reject_proposal, total_weight, user_total_weight};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, GetPollResponse, ConfigResponse, StateResponse};
 use crate::state::{
     Config, Migration, PollInfoState, PollStatus, Proposal, State, CONFIG, POLL, POLL_VOTE, STATE,
 };
@@ -22,7 +22,7 @@ const NO_WEIGHT: u128 = 33;
 const VOTE_WEIGHT: u128 = 10;
 // Note, you can use StdResult in some functions where you do not
 // make use of the custom errors
-#[entry_point]
+#[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
@@ -78,7 +78,7 @@ pub fn instantiate(
 }
 
 // And declare a custom Error variant for the ones where you will want to make use of it
-#[entry_point]
+#[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Vote { poll_id, approve } => try_vote(deps, info, env, poll_id, approve),
@@ -481,7 +481,8 @@ fn try_reject(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdRe
 
 fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdResult<Response> {
     // Load storage
-    let mut state = read_state(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
     let poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
 
     // Ensure the sender not sending funds accidentally
@@ -495,10 +496,12 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
         return Err(StdError::generic_err("Unauthorized"));
     }
 
-    let total_weight_bonded = total_weight(&deps, &state);
+    let total_weight_bonded = total_weight(&deps, &config);
     let total_vote_weight = poll.weight_yes_vote.add(poll.weight_no_vote);
+
     let total_vote_weight_in_percentage =
         total_vote_weight.u128() * 100 as u128 / total_vote_weight.u128();
+
     let total_yes_weight_percentage = if !poll.weight_yes_vote.is_zero() {
         poll.weight_yes_vote.u128() * 100 / total_vote_weight.u128()
     } else {
@@ -602,16 +605,49 @@ pub fn loterra_instance_reply(
     }
 }
 
-#[entry_point]
+#[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetPoll { .. } => to_binary(&query_count(deps)?),
-    }
+    let response = match msg {
+        QueryMsg::Config {} => to_binary(&query_config(deps)?)?,
+        QueryMsg::State {} => to_binary(&query_state(deps)?)?,
+        QueryMsg::GetPoll { poll_id } => to_binary(&query_poll(deps, poll_id)?)?,
+    };
+    Ok(response)
 }
-
-fn query_count(deps: Deps) -> StdResult<u64> {
+fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
+    let config = CONFIG.load(deps.storage)?;
+    Ok(config)
+}
+fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
-    Ok(1)
+    Ok(state)
+}
+fn query_poll(deps: Deps, poll_id: u64) -> StdResult<GetPollResponse> {
+    let poll = match POLL.may_load(deps.storage, &poll_id.to_be_bytes())? {
+        Some(poll) => Some(poll),
+        None => {
+            return Err(StdError::generic_err("Not found"));
+        }
+    }
+        .unwrap();
+
+    Ok(GetPollResponse {
+        creator: deps.api.addr_humanize(&poll.creator)?,
+        status: poll.status,
+        end_height: poll.end_height,
+        start_height: poll.start_height,
+        description: poll.description,
+        amount: poll.amount,
+        prizes_per_ranks: poll.prizes_per_ranks,
+        weight_yes_vote: poll.weight_yes_vote,
+        weight_no_vote: poll.weight_no_vote,
+        yes_vote: poll.yes_vote,
+        no_vote: poll.no_vote,
+        proposal: poll.proposal,
+        migration: poll.migration,
+        recipient: poll.recipient,
+        collateral: poll.collateral
+    })
 }
 
 #[cfg(test)]
