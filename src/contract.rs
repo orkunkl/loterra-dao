@@ -503,7 +503,7 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
     let total_vote_weight = poll.weight_yes_vote.add(poll.weight_no_vote);
 
     let total_vote_weight_in_percentage =
-        total_vote_weight.u128() * 100 as u128 / total_vote_weight.u128();
+        total_vote_weight.u128() * 100_u128 / total_vote_weight.u128();
 
     let total_yes_weight_percentage = if !poll.weight_yes_vote.is_zero() {
         poll.weight_yes_vote.u128() * 100 / total_vote_weight.u128()
@@ -585,7 +585,7 @@ pub fn loterra_instance_reply(
                     ev.attributes
                         .into_iter()
                         .find(|attr| attr.key == "contract_address")
-                        .and_then(|addr| Some(addr.value))
+                        .map(|addr| addr.value)
                 })
                 .unwrap();
             state.loterry_address = Some(deps.api.addr_canonicalize(&contract_address.as_str())?);
