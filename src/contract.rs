@@ -106,6 +106,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
         ExecuteMsg::RejectPoll { poll_id } => try_reject(deps, info, env, poll_id),
     }
 }
+#[allow(clippy::too_many_arguments)]
 pub fn try_create_poll(
     deps: DepsMut,
     info: MessageInfo,
