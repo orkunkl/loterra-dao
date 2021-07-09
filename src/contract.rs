@@ -1,7 +1,7 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, Binary, ContractResult, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg, SubcallResponse, Uint128,
-    WasmMsg, WasmQuery,
+    attr, entry_point, to_binary, BankMsg, Binary, Coin, ContractResult, CosmosMsg, Deps, DepsMut,
+    Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg, SubcallResponse,
+    Uint128, WasmMsg, WasmQuery,
 };
 
 use crate::error::ContractError;
@@ -537,7 +537,6 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
     } else {
         0_u128
     };
-    println!("{}", total_vote_weight_in_percentage);
 
     // Reject the proposal
     // Based on the recommendation of security audit
@@ -561,9 +560,26 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
 
     STATE.save(deps.storage, &state)?;
 
+    /*
+       TODO: Build this test
+    */
+    let mut msg = vec![];
+    if poll.status == PollStatus::Passed {
+        msg.push(
+            BankMsg::Send {
+                to_address: deps.api.addr_humanize(&poll.creator)?.to_string(),
+                amount: vec![Coin {
+                    denom: state.denom,
+                    amount: poll.collateral,
+                }],
+            }
+            .into(),
+        )
+    }
+
     Ok(Response {
         submessages: vec![],
-        messages: vec![],
+        messages: msg,
         data: None,
         attributes: vec![
             attr("action", "present poll"),
