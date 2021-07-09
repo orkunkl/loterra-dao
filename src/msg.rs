@@ -1,4 +1,4 @@
-use crate::state::{PollStatus, Proposal};
+use crate::state::{PollStatus, Proposal, Migration};
 use cosmwasm_std::{Addr, Binary, Uint128, Decimal};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ pub enum ExecuteMsg {
         amount: Option<Uint128>,
         prizes_per_ranks: Option<Vec<u8>>,
         recipient: Option<String>,
+        migration: Option<Migration>
     },
     /// Vote proposal
     Vote { poll_id: u64, approve: bool },
@@ -66,10 +67,11 @@ pub struct GetPollResponse {
     pub description: String,
     pub amount: Uint128,
     pub prizes_per_ranks: Vec<u8>,
-    pub migration_address: Option<String>,
+    pub recipient: Option<String>,
     pub weight_yes_vote: Uint128,
     pub weight_no_vote: Uint128,
     pub yes_vote: u64,
     pub no_vote: u64,
     pub proposal: Proposal,
+    pub migration: Option<Migration>
 }

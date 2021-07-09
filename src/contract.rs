@@ -1,7 +1,7 @@
-use cosmwasm_std::{attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Uint64, WasmMsg, StdError, SubMsg, CosmosMsg, ReplyOn, WasmQuery};
+use cosmwasm_std::{attr, entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Uint64, WasmMsg, StdError, SubMsg, CosmosMsg, ReplyOn, WasmQuery, Reply, ContractResult, SubcallResponse};
 
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{Config, PollStatus, State, CONFIG, POLL, POLL_VOTE, STATE, Proposal, PollInfoState};
+use crate::state::{Config, PollStatus, State, CONFIG, POLL, POLL_VOTE, STATE, Proposal, PollInfoState, Migration};
 use crate::helpers::user_total_weight;
 use std::ops::Add;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
@@ -74,7 +74,7 @@ pub fn execute(
             attributes: vec![],
             data: None,
         }),
-        ExecuteMsg::Poll {description, proposal, prizes_per_ranks, amount, recipient} => try_create_poll(deps, info, env, description, proposal, prizes_per_ranks, amount, recipient)
+        ExecuteMsg::Poll {description, proposal, prizes_per_ranks, amount, recipient, migration} => try_create_poll(deps, info, env, description, proposal, prizes_per_ranks, amount, recipient, migration)
     }
 }
 pub fn try_create_poll(
@@ -85,7 +85,8 @@ pub fn try_create_poll(
     proposal: Proposal,
     prizes_per_ranks: Option<Vec<u8>>,
     amount: Option<Uint128>,
-    recipient: Option<String>
+    recipient: Option<String>,
+    migration: Option<Migration>
 ) -> StdResult<Response> {
     let mut state = STATE.load(deps.storage)?;
     // Increment and get the new poll id for bucket key
@@ -131,6 +132,7 @@ pub fn try_create_poll(
     let mut proposal_amount: Uint128 = Uint128::zero();
     let mut proposal_prize_rank: Vec<u8> = vec![];
     let mut proposal_human_address: Option<String> = None;
+    let mut migration_to: Option<Migration> = None;
 
     let proposal_type = if let Proposal::HolderFeePercentage = proposal {
         match amount {
@@ -236,20 +238,16 @@ pub fn try_create_poll(
         }
         Proposal::AmountToRegister
     } else if let Proposal::SecurityMigration = proposal {
-        match recipient {
-            Some(migration_address) => {
-                let sender = deps.api.addr_canonicalize(info.sender.as_str())?;
-                let contract_address =
-                    deps.api.addr_canonicalize(&env.contract.address.as_str())?;
-                if state.admin != contract_address && state.admin != sender {
-                    return Err(StdError::generic_err("Unauthorized"));
-                }
-
-                proposal_human_address = Some(migration_address);
+        match migration {
+            /*
+                No need anymore migration address contract_addr, new_code_id, msg...
+            */
+            Some(migration) => {
+                migration_to = Some(migration);
             }
             None => {
                 return Err(StdError::generic_err(
-                    "Migration address is required".to_string(),
+                    "Migration is required".to_string(),
                 ));
             }
         }
@@ -342,7 +340,8 @@ pub fn try_create_poll(
         amount: proposal_amount,
         prizes_per_ranks: proposal_prize_rank,
         proposal: proposal_type,
-        migration_address: proposal_human_address,
+        recipient: proposal_human_address,
+        migration: migration_to
     };
 
     // Save poll
@@ -447,6 +446,33 @@ pub fn try_reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Respons
     })?;
     Ok(Response::default())
 } */
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
+    let config = read_config(deps.storage)?;
+    match msg.id {
+        0 => loterra_instance_reply(deps, env, msg.result),
+        _ => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn loterra_instance_reply(
+    deps: DepsMut,
+    _env: Env,
+    msg: ContractResult<SubcallResponse>,
+) -> Result<Response, ContractError> {
+    let mut state = STATE.load(deps.storage)?;
+    /*
+        TODO: Save the address of LoTerra contract lottery to the state
+     */
+    match msg {
+        ContractResult::Ok(subcall) => {
+            Ok(ContractResult::Ok())
+        }
+        ContractResult::Err(_) => Err(ContractError::Unauthorized {}),
+    }
+}
+
 
 #[entry_point]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
