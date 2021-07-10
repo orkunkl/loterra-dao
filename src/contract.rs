@@ -1,7 +1,7 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, BankMsg, Binary, Coin, ContractResult, CosmosMsg, Deps, DepsMut,
-    Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg, SubcallResponse,
-    Uint128, WasmMsg, WasmQuery,
+    attr, entry_point, to_binary, BankMsg, Binary, Coin, ContractResult, CosmosMsg,
+    Deps, DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg,
+    SubcallResponse, Uint128, WasmMsg, WasmQuery,
 };
 
 use crate::error::ContractError;
@@ -13,6 +13,7 @@ use crate::msg::{
 use crate::state::{
     Config, Migration, PollInfoState, PollStatus, Proposal, State, CONFIG, POLL, POLL_VOTE, STATE,
 };
+use crate::taxation::deduct_tax;
 use cw20::{BalanceResponse, Cw20QueryMsg};
 use std::ops::Add;
 
@@ -445,6 +446,7 @@ pub fn try_vote(
     })
 }
 fn try_reject(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdResult<Response> {
+    let state = STATE.load(deps.storage)?;
     let poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
     let sender = deps.api.addr_canonicalize(&info.sender.as_str())?;
 
@@ -478,10 +480,23 @@ fn try_reject(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdRe
         Also we need to check what we can do with this collateral.
         Probably send it to the lottery contract???
     */
+    let msg = BankMsg::Send {
+        to_address: deps
+            .api
+            .addr_humanize(&state.loterry_address.unwrap())?
+            .to_string(),
+        amount: vec![deduct_tax(
+            &deps.querier,
+            Coin {
+                denom: state.denom,
+                amount: poll.collateral,
+            },
+        )?],
+    };
 
     Ok(Response {
         submessages: vec![],
-        messages: vec![],
+        messages: vec![msg.into()],
         data: None,
         attributes: vec![
             attr("action", "creator reject the proposal"),
@@ -576,10 +591,30 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
         msg.push(
             BankMsg::Send {
                 to_address: deps.api.addr_humanize(&poll.creator)?.to_string(),
-                amount: vec![Coin {
-                    denom: state.denom,
-                    amount: poll.collateral,
-                }],
+                amount: vec![deduct_tax(
+                    &deps.querier,
+                    Coin {
+                        denom: state.denom,
+                        amount: poll.collateral,
+                    },
+                )?],
+            }
+            .into(),
+        )
+    } else {
+        msg.push(
+            BankMsg::Send {
+                to_address: deps
+                    .api
+                    .addr_humanize(&state.loterry_address.unwrap())?
+                    .to_string(),
+                amount: vec![deduct_tax(
+                    &deps.querier,
+                    Coin {
+                        denom: state.denom,
+                        amount: poll.collateral,
+                    },
+                )?],
             }
             .into(),
         )
@@ -1538,7 +1573,7 @@ mod tests {
     }
     mod reject {
         use super::*;
-        use cosmwasm_std::Coin;
+        use cosmwasm_std::{Coin, Event};
 
         // handle_reject
         fn create_poll(deps: DepsMut) {
@@ -1639,17 +1674,25 @@ mod tests {
         #[test]
         fn success() {
             let before_all = before_all();
-            let mut deps = mock_dependencies(&[Coin {
+            let mut deps = mock_dependencies_custom(&[Coin {
                 denom: "ust".to_string(),
                 amount: Uint128(9_000_000),
             }]);
             default_init(deps.as_mut());
             create_poll(deps.as_mut());
+            let result = ContractResult::Ok(SubcallResponse {
+                events: vec![Event {
+                    kind: "instantiate_contract".to_string(),
+                    attributes: vec![attr("contract_address", "loterra")],
+                }],
+                data: None,
+            });
+            let reply = reply(deps.as_mut(), mock_env(), Reply { id: 0, result }).unwrap();
             let msg = ExecuteMsg::RejectPoll { poll_id: 1 };
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
             println!("{:?}", res);
-            assert_eq!(res.messages.len(), 0);
+            assert_eq!(res.messages.len(), 1);
             assert_eq!(res.attributes.len(), 2);
             let poll_state = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
@@ -1660,7 +1703,7 @@ mod tests {
 
     mod present {
         use super::*;
-        use cosmwasm_std::{BankMsg, Coin, CosmosMsg, Decimal};
+        use cosmwasm_std::{BankMsg, Coin, CosmosMsg, Decimal, Event};
 
         // handle_present
         fn create_poll(deps: DepsMut) {
@@ -1932,9 +1975,17 @@ mod tests {
             env.block.height = poll_state.end_height + 1;
 
             let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let result = ContractResult::Ok(SubcallResponse {
+                events: vec![Event {
+                    kind: "instantiate_contract".to_string(),
+                    attributes: vec![attr("contract_address", "loterra")],
+                }],
+                data: None,
+            });
+            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let res = execute(deps.as_mut(), env, info, msg).unwrap();
             assert_eq!(res.attributes.len(), 3);
-            assert_eq!(res.messages.len(), 0);
+            assert_eq!(res.messages.len(), 1);
 
             let poll_state = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
@@ -1970,6 +2021,14 @@ mod tests {
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
 
+            let result = ContractResult::Ok(SubcallResponse {
+                events: vec![Event {
+                    kind: "instantiate_contract".to_string(),
+                    attributes: vec![attr("contract_address", "loterra")],
+                }],
+                data: None,
+            });
+            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let env = mock_env();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let msg = ExecuteMsg::Vote {
@@ -1989,7 +2048,7 @@ mod tests {
             let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
             let res = execute(deps.as_mut(), env, info, msg).unwrap();
             assert_eq!(res.attributes.len(), 3);
-            assert_eq!(res.messages.len(), 0);
+            assert_eq!(res.messages.len(), 1);
 
             let poll_state = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
@@ -2043,6 +2102,14 @@ mod tests {
             env.block.height = poll_state.end_height - 1000;
 
             let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let result = ContractResult::Ok(SubcallResponse {
+                events: vec![Event {
+                    kind: "instantiate_contract".to_string(),
+                    attributes: vec![attr("contract_address", "loterra")],
+                }],
+                data: None,
+            });
+            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let res = execute(deps.as_mut(), env, info, msg);
             match res {
                 Err(StdError::GenericErr { msg, .. }) => {
@@ -2111,7 +2178,14 @@ mod tests {
             let env = mock_env();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
-
+            let result = ContractResult::Ok(SubcallResponse {
+                events: vec![Event {
+                    kind: "instantiate_contract".to_string(),
+                    attributes: vec![attr("contract_address", "loterra")],
+                }],
+                data: None,
+            });
+            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let env = mock_env();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let msg = ExecuteMsg::Vote {
