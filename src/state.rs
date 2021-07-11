@@ -35,7 +35,8 @@ pub struct PollInfoState {
     pub recipient: Option<String>,
     pub migration: Option<Migration>,
     pub collateral: Uint128,
-    pub applied: bool,
+    pub executed: bool,
+    pub contract_address: CanonicalAddr,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum PollStatus {

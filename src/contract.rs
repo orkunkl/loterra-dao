@@ -7,8 +7,8 @@ use cosmwasm_std::{
 use crate::error::ContractError;
 use crate::helpers::{reject_proposal, total_weight, user_total_weight};
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, GetPollResponse, InstantiateMsg, LoterraStaking, QueryMsg,
-    StakingStateResponse, StateResponse,
+    ConfigResponse, ExecuteMsg, GetPollResponse, InstantiateMsg, LoterraLottery, LoterraStaking,
+    QueryMsg, StakingStateResponse, StateResponse,
 };
 use crate::state::{
     Config, Migration, PollInfoState, PollStatus, Proposal, State, CONFIG, POLL, POLL_VOTE, STATE,
@@ -93,6 +93,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             amount,
             recipient,
             migration,
+            contract_address,
         } => try_create_poll(
             deps,
             info,
@@ -103,6 +104,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             amount,
             recipient,
             migration,
+            contract_address,
         ),
         ExecuteMsg::PresentPoll { poll_id } => try_present(deps, info, env, poll_id),
         ExecuteMsg::RejectPoll { poll_id } => try_reject(deps, info, env, poll_id),
@@ -119,6 +121,7 @@ pub fn try_create_poll(
     amount: Option<Uint128>,
     recipient: Option<String>,
     migration: Option<Migration>,
+    contract_address: String,
 ) -> StdResult<Response> {
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
@@ -360,7 +363,8 @@ pub fn try_create_poll(
         recipient: proposal_human_address,
         migration: migration_to,
         collateral: sent,
-        applied: false,
+        executed: false,
+        contract_address: deps.api.addr_canonicalize(&contract_address.as_str())?,
     };
 
     // Save poll
@@ -620,8 +624,25 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
         )
     }
 
+    /*
+       TODO: Need to create a Reply message in order to catch the result
+    */
+    // Call LoTerra lottery contract and get the response
+    let sub_msg = LoterraLottery::PresentPoll { poll_id };
+    let execute_sub_msg = WasmMsg::Execute {
+        contract_addr: deps.api.addr_humanize(&poll.contract_address)?.to_string(),
+        msg: sub_msg.into(),
+        send: vec![],
+    };
+    let sub = SubMsg {
+        id: 1,
+        msg: CosmosMsg::Wasm(execute_sub_msg),
+        gas_limit: None,
+        reply_on: ReplyOn::Always,
+    };
+
     Ok(Response {
-        submessages: vec![],
+        submessages: vec![sub],
         messages: msg,
         data: None,
         attributes: vec![
@@ -727,6 +748,7 @@ fn query_poll(deps: Deps, poll_id: u64) -> StdResult<GetPollResponse> {
         migration: poll.migration,
         recipient: poll.recipient,
         collateral: poll.collateral,
+        contract_address: deps.api.addr_humanize(&poll.contract_address)?,
     })
 }
 
@@ -807,6 +829,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
             let info = mock_info(
                 before_all.default_sender.as_str().clone(),
@@ -843,7 +866,8 @@ mod tests {
                 amount: Option::from(Uint128(22)),
                 recipient: None,
                 prizes_per_ranks: None,
-                migration: None
+                migration: None,
+                contract_address: "lottery".to_string()
             };
             let info = mock_info(
                 before_all.default_sender.as_str().clone(),
@@ -877,6 +901,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let res = execute(deps.as_mut(), env, info, msg);
@@ -900,6 +925,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             }
         }
         fn msg_constructor_amount_out(proposal: Proposal) -> ExecuteMsg {
@@ -910,6 +936,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             }
         }
 
@@ -921,6 +948,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: Option::from(vec![10, 20, 23, 23, 23, 23]),
                 migration: None,
+                contract_address: "lottery".to_string(),
             }
         }
 
@@ -932,6 +960,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: Option::from(vec![100, 20, 23, 23]),
                 migration: None,
+                contract_address: "lottery".to_string(),
             }
         }
 
@@ -1143,6 +1172,7 @@ mod tests {
                 recipient,
                 prizes_per_ranks,
                 migration: migration,
+                contract_address: "lottery".to_string(),
             }
         }
 
@@ -1371,6 +1401,7 @@ mod tests {
                 prizes_per_ranks: None,
                 recipient: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
 
             let _res = execute(
@@ -1584,6 +1615,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
             let _res = execute(
                 deps,
@@ -1714,6 +1746,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
             let _res = execute(
                 deps,
@@ -1741,6 +1774,7 @@ mod tests {
                     new_code_id: 0,
                     msg: Default::default(),
                 }),
+                contract_address: "lottery".to_string(),
             };
             let _res = execute(
                 deps,
@@ -1765,6 +1799,7 @@ mod tests {
                 recipient: None,
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
             let _res = execute(
                 deps,
@@ -1788,6 +1823,7 @@ mod tests {
                 recipient: Some("newAddress".to_string()),
                 prizes_per_ranks: None,
                 migration: None,
+                contract_address: "lottery".to_string(),
             };
             let _res = execute(
                 deps,

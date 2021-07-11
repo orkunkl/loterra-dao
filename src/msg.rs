@@ -25,6 +25,7 @@ pub enum ExecuteMsg {
         prizes_per_ranks: Option<Vec<u8>>,
         recipient: Option<String>,
         migration: Option<Migration>,
+        contract_address: String,
     },
     /// Vote proposal
     Vote { poll_id: u64, approve: bool },
@@ -56,7 +57,10 @@ pub struct StakingStateResponse {
     pub total_balance: Uint128,
     pub prev_reward_balance: Uint128,
 }
-
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub enum LoterraLottery {
+    PresentPoll { poll_id: u64 },
+}
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct HolderResponse {
     pub address: String,
@@ -86,6 +90,7 @@ pub struct GetPollResponse {
     pub proposal: Proposal,
     pub migration: Option<Migration>,
     pub collateral: Uint128,
+    pub contract_address: Addr,
 }
 
 // We define a custom struct for each query response
