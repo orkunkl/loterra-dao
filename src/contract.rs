@@ -631,7 +631,7 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
     let sub_msg = LoterraLottery::PresentPoll { poll_id };
     let execute_sub_msg = WasmMsg::Execute {
         contract_addr: deps.api.addr_humanize(&poll.contract_address)?.to_string(),
-        msg: sub_msg.into(),
+        msg: to_binary(&sub_msg)?,
         send: vec![],
     };
     let sub = SubMsg {
