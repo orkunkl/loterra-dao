@@ -657,6 +657,7 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
         0 => loterra_instance_reply(deps, env, msg.result),
+        1 => loterra_lottery_reply(deps, env, msg.result),
         _ => Err(ContractError::Unauthorized {}),
     }
 }
@@ -703,6 +704,58 @@ pub fn loterra_instance_reply(
             })
         }
         ContractResult::Err(_) => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn loterra_lottery_reply(
+    deps: DepsMut,
+    _env: Env,
+    msg: ContractResult<SubcallResponse>,
+) -> Result<Response, ContractError> {
+    match msg {
+        ContractResult::Ok(subcall) => {
+            let (poll_result, poll_id) = subcall
+                .events
+                .into_iter()
+                .find(|e| e.kind == "message")
+                .and_then(|ev| {
+                    let res = ev.clone()
+                        .attributes
+                        .into_iter()
+                        .find(|attr| attr.key == "result")
+                        .map(|res| res.value);
+
+                    let id = ev
+                        .attributes
+                        .into_iter()
+                        .find(|attr| attr.key == "poll_id")
+                        .map(|id| id.value);
+
+                    Some((res, id))
+                })
+                .unwrap();
+            if poll_result.clone().unwrap() == "success" {
+                POLL.update(deps.storage, &poll_id.clone().unwrap().as_ref(), |poll| match poll {
+                    None => Err(ContractError::Unauthorized {}),
+                    Some(pollInfo) => {
+                        let mut update_poll = pollInfo;
+                        update_poll.executed = true;
+                        Ok(update_poll)
+                    }
+                })?;
+            }
+            Ok(Response {
+                submessages: vec![],
+                messages: vec![],
+                attributes: vec![
+                    attr("poll_executed", true),
+                    attr("poll_id", poll_id.unwrap()),
+                    attr("success", true),
+                ],
+                data: None,
+            })
+        }
+        ContractResult::Err(_) => Err(ContractError::Unauthorized {})
     }
 }
 
