@@ -29,7 +29,7 @@ const QUORUM: u128 = 10;
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
@@ -56,7 +56,7 @@ pub fn instantiate(
     STATE.save(deps.storage, &state)?;
 
     let wasm_msg = WasmMsg::Instantiate {
-        admin: Some(info.sender.to_string()),
+        admin: Some(env.contract.address.to_string()),
         code_id: msg.code_id,
         msg: msg.message,
         send: vec![],
@@ -687,6 +687,7 @@ pub fn loterra_instance_reply(
             state.loterry_address = Some(deps.api.addr_canonicalize(&contract_address.as_str())?);
             STATE.save(deps.storage, &state)?;
 
+            // Probably not possible need to check
             let update = WasmMsg::UpdateAdmin {
                 contract_addr: contract_address.clone(),
                 admin: contract_address.clone(),
