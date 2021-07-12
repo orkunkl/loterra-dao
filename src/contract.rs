@@ -363,8 +363,8 @@ pub fn try_create_poll(
         recipient: proposal_human_address,
         migration: migration_to,
         collateral: sent,
-        executed: false,
         contract_address: deps.api.addr_canonicalize(&contract_address.as_str())?,
+        applied: false
     };
 
     // Save poll
@@ -625,7 +625,7 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
     }
 
     /*
-       TODO: Need to create a Reply message in order to catch the result
+       Create a Reply message in order to catch the result
     */
     // Call LoTerra lottery contract and get the response
     let sub_msg = LoterraLottery::PresentPoll { poll_id };
@@ -722,7 +722,7 @@ pub fn loterra_lottery_reply(
                     let res = ev.clone()
                         .attributes
                         .into_iter()
-                        .find(|attr| attr.key == "result")
+                        .find(|attr| attr.key == "applied")
                         .map(|res| res.value);
 
                     let id = ev
@@ -731,26 +731,25 @@ pub fn loterra_lottery_reply(
                         .find(|attr| attr.key == "poll_id")
                         .map(|id| id.value);
 
-                    Some((res, id))
+                    Some((res.unwrap(), id.unwrap()))
                 })
                 .unwrap();
-            if poll_result.clone().unwrap() == "success" {
-                POLL.update(deps.storage, &poll_id.clone().unwrap().as_ref(), |poll| match poll {
-                    None => Err(ContractError::Unauthorized {}),
-                    Some(pollInfo) => {
-                        let mut update_poll = pollInfo;
-                        update_poll.executed = true;
-                        Ok(update_poll)
-                    }
-                })?;
-            }
+
+            POLL.update(deps.storage, &poll_id.clone().unwrap().as_ref(), |poll| match poll {
+                None => Err(ContractError::Unauthorized {}),
+                Some(pollInfo) => {
+                    let mut update_poll = pollInfo;
+                    update_poll.applied = poll_result.parse().unwrap();
+                    Ok(update_poll)
+                }
+            })?;
+
             Ok(Response {
                 submessages: vec![],
                 messages: vec![],
                 attributes: vec![
-                    attr("poll_executed", true),
+                    attr("applied", poll_result),
                     attr("poll_id", poll_id.unwrap()),
-                    attr("success", true),
                 ],
                 data: None,
             })
@@ -802,6 +801,7 @@ fn query_poll(deps: Deps, poll_id: u64) -> StdResult<GetPollResponse> {
         recipient: poll.recipient,
         collateral: poll.collateral,
         contract_address: deps.api.addr_humanize(&poll.contract_address)?,
+        applied: poll.applied
     })
 }
 

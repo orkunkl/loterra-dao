@@ -91,6 +91,7 @@ pub struct GetPollResponse {
     pub migration: Option<Migration>,
     pub collateral: Uint128,
     pub contract_address: Addr,
+    pub applied: bool,
 }
 
 // We define a custom struct for each query response
