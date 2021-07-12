@@ -736,7 +736,8 @@ pub fn loterra_lottery_reply(
                 })
                 .unwrap();
 
-            POLL.update(deps.storage, &poll_id.clone().as_ref(), |poll| match poll {
+            let id = poll_id.parse::<u64>().unwrap();
+            POLL.update(deps.storage, &id.to_be_bytes(), |poll| match poll {
                 None => Err(ContractError::Unauthorized {}),
                 Some(poll_info) => {
                     let mut update_poll = poll_info;
@@ -1786,7 +1787,7 @@ mod tests {
 
     mod present {
         use super::*;
-        use cosmwasm_std::{BankMsg, Coin, CosmosMsg, Decimal, Event};
+        use cosmwasm_std::{Attribute, BankMsg, Coin, CosmosMsg, Decimal, Event};
 
         // handle_present
         fn create_poll(deps: DepsMut) {
@@ -2296,103 +2297,90 @@ mod tests {
                 .unwrap();
             assert_eq!(poll_state.status, PollStatus::Passed);
         }
-    }
-    /*
-    fn default_init(deps: DepsMut) {
-        let msg = InstantiateMsg {
-            code_id: 0,
-            message: Default::default(),
-            label: "".to_string(),
-            staking_contract_address: "".to_string(),
-            poll_default_end_height: 0,
-        };
-        let info = mock_info("creator", &coins(1000, "earth"));
-        // we can just call .unwrap() to assert this was a success
-        let res = instantiate(deps, mock_env(), info, msg).unwrap();
-    }
-    #[test]
-    fn proper_initialization() {
-        let mut deps = mock_dependencies(&[]);
+        #[test]
+        fn reply_lottery() {
+            let before_all = before_all();
+            let mut deps = mock_dependencies_custom(&[Coin {
+                denom: "ust".to_string(),
+                amount: Uint128(9_000_000),
+            }]);
+            deps.querier.with_holder(
+                before_all.default_sender.clone(),
+                Uint128(100_000_000),
+                Decimal::zero(),
+                Decimal::zero(),
+            );
+            default_init(deps.as_mut());
+            create_poll(deps.as_mut());
+            let mut env = mock_env();
+            let result = ContractResult::Ok(SubcallResponse {
+                events: vec![Event {
+                    kind: "instantiate_contract".to_string(),
+                    attributes: vec![attr("contract_address", "loterra")],
+                }],
+                data: None,
+            });
+            let rep = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let msg = ExecuteMsg::Vote {
+                poll_id: 1,
+                approve: true,
+            };
+            execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let poll_state = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            env.block.height = poll_state.end_height + 1000;
 
-        let msg = InstantiateMsg {
-            code_id: 0,
-            message: Default::default(),
-            label: "".to_string(),
-            staking_contract_address: "".to_string(),
-            poll_default_end_height: 0,
-        };
-        let info = mock_info("creator", &coins(1000, "earth"));
+            let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
+            let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-        // we can just call .unwrap() to assert this was a success
-        let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(0, res.messages.len());
+            // Reply applied true
+            let rep = Reply {
+                id: 1,
+                result: ContractResult::Ok(SubcallResponse {
+                    events: vec![Event {
+                        kind: "message".to_string(),
+                        attributes: vec![
+                            attr("action", "apply poll"),
+                            attr("applied", true),
+                            attr("poll_id", 1),
+                        ],
+                    }],
+                    data: None,
+                }),
+            };
+            let res = reply(deps.as_mut(), env.clone(), rep).unwrap();
+            let poll = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            // true
+            assert!(poll.applied);
 
-        // it worked, let's query the state
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetPoll { poll_id: 0 }).unwrap();
-        let value: u64 = from_binary(&res).unwrap();
-        assert_eq!(1, value);
-    }
-    #[test]
-    fn vote() {
-        let mut deps = mock_dependencies(&[]);
-        default_init(deps.as_mut());
-
-        let info = mock_info("player", &coins(100, "earth"));
-        let env = mock_env();
-        let msg = ExecuteMsg::Vote {
-            poll_id: 1,
-            approve: false,
-        };
-        let res = execute(deps.as_mut(), env, info, msg);
-        println!("{:?}", res)
-    } */
-    /*
-    #[test]
-    fn increment() {
-        let mut deps = mock_dependencies(&coins(2, "token"));
-
-        let msg = InstantiateMsg { count: 17 };
-        let info = mock_info("creator", &coins(2, "token"));
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        // beneficiary can release it
-        let info = mock_info("anyone", &coins(2, "token"));
-        let msg = ExecuteMsg::Increment {};
-        let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        // should increase counter by 1
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(18, value.count);
-    }
-
-    #[test]
-    fn reset() {
-        let mut deps = mock_dependencies(&coins(2, "token"));
-
-        let msg = InstantiateMsg { count: 17 };
-        let info = mock_info("creator", &coins(2, "token"));
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        // beneficiary can release it
-        let unauth_info = mock_info("anyone", &coins(2, "token"));
-        let msg = ExecuteMsg::Reset { count: 5 };
-        let res = execute(deps.as_mut(), mock_env(), unauth_info, msg);
-        match res {
-            Err(ContractError::Unauthorized {}) => {}
-            _ => panic!("Must return unauthorized error"),
+            // Reply applied false
+            let rep = Reply {
+                id: 1,
+                result: ContractResult::Ok(SubcallResponse {
+                    events: vec![Event {
+                        kind: "message".to_string(),
+                        attributes: vec![
+                            attr("action", "apply poll"),
+                            attr("applied", false),
+                            attr("poll_id", 1),
+                        ],
+                    }],
+                    data: None,
+                }),
+            };
+            let res = reply(deps.as_mut(), env, rep).unwrap();
+            let poll = POLL
+                .load(deps.as_ref().storage, &1_u64.to_be_bytes())
+                .unwrap();
+            // false
+            assert!(!poll.applied);
         }
-
-        // only the original creator can reset the counter
-        let auth_info = mock_info("creator", &coins(2, "token"));
-        let msg = ExecuteMsg::Reset { count: 5 };
-        let _res = execute(deps.as_mut(), mock_env(), auth_info, msg).unwrap();
-
-        // should now be 5
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(5, value.count);
-    } */
+    }
 }
 
 //let result = ContractResult::Ok(SubcallResponse{ events: vec![Event{ kind: "instantiate_contract".to_string(), attributes: vec![attr("contract_address", "loterra")] }], data: None });
