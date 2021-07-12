@@ -23,7 +23,7 @@ const HOLDERS_MAX_REWARD: u8 = 20;
 const WORKER_MAX_REWARD: u8 = 10;
 const YES_WEIGHT: u128 = 50;
 const NO_WEIGHT: u128 = 33;
-const VOTE_WEIGHT: u128 = 10;
+const QUORUM: u128 = 10;
 // Note, you can use StdResult in some functions where you do not
 // make use of the custom errors
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -568,7 +568,7 @@ fn try_present(deps: DepsMut, info: MessageInfo, env: Env, poll_id: u64) -> StdR
     // We recommend to not reject votes based on the number of votes, but rather by the stake of the voters.
     if total_yes_weight_percentage < YES_WEIGHT
         || total_no_weight_percentage > NO_WEIGHT
-        || total_vote_weight_in_percentage < VOTE_WEIGHT
+        || total_vote_weight_in_percentage < QUORUM
     {
         return reject_proposal(deps, poll_id);
     }
