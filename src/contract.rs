@@ -723,11 +723,13 @@ pub fn loterra_lottery_reply(
                         .clone()
                         .attributes
                         .into_iter()
-                        .find(|attr| attr.key == "applied");
+                        .find(|attr| attr.key == "applied")?;
+                    let id = ev
+                        .attributes
+                        .into_iter()
+                        .find(|attr| attr.key == "poll_id")?;
 
-                    let id = ev.attributes.into_iter().find(|attr| attr.key == "poll_id");
-
-                    Some((res.unwrap().value, id.unwrap().value))
+                    Some((res.value, id.value))
                 })
                 .unwrap();
 
