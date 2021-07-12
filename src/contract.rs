@@ -364,7 +364,7 @@ pub fn try_create_poll(
         migration: migration_to,
         collateral: sent,
         contract_address: deps.api.addr_canonicalize(&contract_address.as_str())?,
-        applied: false
+        applied: false,
     };
 
     // Save poll
@@ -719,7 +719,8 @@ pub fn loterra_lottery_reply(
                 .into_iter()
                 .find(|e| e.kind == "message")
                 .and_then(|ev| {
-                    let res = ev.clone()
+                    let res = ev
+                        .clone()
                         .attributes
                         .into_iter()
                         .find(|attr| attr.key == "applied")
@@ -735,10 +736,10 @@ pub fn loterra_lottery_reply(
                 })
                 .unwrap();
 
-            POLL.update(deps.storage, &poll_id.clone().unwrap().as_ref(), |poll| match poll {
+            POLL.update(deps.storage, &poll_id.clone().as_ref(), |poll| match poll {
                 None => Err(ContractError::Unauthorized {}),
-                Some(pollInfo) => {
-                    let mut update_poll = pollInfo;
+                Some(poll_info) => {
+                    let mut update_poll = poll_info;
                     update_poll.applied = poll_result.parse().unwrap();
                     Ok(update_poll)
                 }
@@ -747,14 +748,11 @@ pub fn loterra_lottery_reply(
             Ok(Response {
                 submessages: vec![],
                 messages: vec![],
-                attributes: vec![
-                    attr("applied", poll_result),
-                    attr("poll_id", poll_id.unwrap()),
-                ],
+                attributes: vec![attr("applied", poll_result), attr("poll_id", poll_id)],
                 data: None,
             })
         }
-        ContractResult::Err(_) => Err(ContractError::Unauthorized {})
+        ContractResult::Err(_) => Err(ContractError::Unauthorized {}),
     }
 }
 
@@ -801,7 +799,7 @@ fn query_poll(deps: Deps, poll_id: u64) -> StdResult<GetPollResponse> {
         recipient: poll.recipient,
         collateral: poll.collateral,
         contract_address: deps.api.addr_humanize(&poll.contract_address)?,
-        applied: poll.applied
+        applied: poll.applied,
     })
 }
 
