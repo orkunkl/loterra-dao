@@ -117,7 +117,7 @@ pub fn try_create_poll(
     env: Env,
     description: String,
     proposal: Proposal,
-    prizes_per_ranks: Option<Vec<u8>>,
+    prizes_per_ranks: Option<Vec<u64>>,
     amount: Option<Uint128>,
     recipient: Option<String>,
     migration: Option<Migration>,
@@ -166,7 +166,7 @@ pub fn try_create_poll(
     }
 
     let mut proposal_amount: Uint128 = Uint128::zero();
-    let mut proposal_prize_rank: Vec<u8> = vec![];
+    let mut proposal_prize_rank: Vec<u64> = vec![];
     let mut proposal_human_address: Option<String> = None;
     let mut migration_to: Option<Migration> = None;
 
@@ -234,25 +234,25 @@ pub fn try_create_poll(
     } else if let Proposal::PrizesPerRanks = proposal {
         match prizes_per_ranks {
             Some(ranks) => {
-                if ranks.len() != 4 {
+                if ranks.len() != 6 {
                     return Err(StdError::generic_err(
-                        "Ranks need to be in this format [0, 90, 10, 0] numbers between 0 to 100"
+                        "Ranks need to be in this format [0, 900, 100, 0, 0, 0] numbers between 0 to 1000, permille format required"
                             .to_string(),
                     ));
                 }
                 let mut total_percentage = 0;
                 for rank in ranks.clone() {
-                    if (rank as u8) > 100 {
+                    if (rank as u64) > 1000 {
                         return Err(StdError::generic_err(
-                            "Numbers between 0 to 100".to_string(),
+                            "Numbers between 0 to 1000".to_string(),
                         ));
                     }
                     total_percentage += rank;
                 }
                 // Ensure the repartition sum is 100%
-                if total_percentage != 100 {
+                if total_percentage != 1000 {
                     return Err(StdError::generic_err(
-                        "Numbers total sum need to be equal to 100".to_string(),
+                        "Numbers total sum need to be equal to 1000".to_string(),
                     ));
                 }
 
@@ -996,7 +996,7 @@ mod tests {
                 proposal,
                 amount: None,
                 recipient: None,
-                prizes_per_ranks: Option::from(vec![10, 20, 23, 23, 23, 23]),
+                prizes_per_ranks: Option::from(vec![100, 200, 230, 230, 230, 230, 234]),
                 migration: None,
                 contract_address: "lottery".to_string(),
             }
@@ -1008,7 +1008,7 @@ mod tests {
                 proposal,
                 amount: None,
                 recipient: None,
-                prizes_per_ranks: Option::from(vec![100, 20, 23, 23]),
+                prizes_per_ranks: Option::from(vec![1000, 200, 230, 230, 0, 0]),
                 migration: None,
                 contract_address: "lottery".to_string(),
             }
@@ -1194,7 +1194,7 @@ mod tests {
             match res {
                 Err(StdError::GenericErr { msg, .. }) => assert_eq!(
                     msg,
-                    "Ranks need to be in this format [0, 90, 10, 0] numbers between 0 to 100"
+                    "Ranks need to be in this format [0, 900, 100, 0, 0, 0] numbers between 0 to 1000, permille format required"
                 ),
                 _ => panic!("Unexpected error"),
             }
@@ -1203,7 +1203,7 @@ mod tests {
             println!("{:?}", res);
             match res {
                 Err(StdError::GenericErr { msg, .. }) => {
-                    assert_eq!(msg, "Numbers total sum need to be equal to 100")
+                    assert_eq!(msg, "Numbers total sum need to be equal to 1000")
                 }
                 _ => panic!("Unexpected error"),
             }
@@ -1211,7 +1211,7 @@ mod tests {
         fn msg_constructor_success(
             proposal: Proposal,
             amount: Option<Uint128>,
-            prizes_per_ranks: Option<Vec<u8>>,
+            prizes_per_ranks: Option<Vec<u64>>,
             recipient: Option<String>,
             migration: Option<Migration>,
         ) -> ExecuteMsg {
@@ -1269,7 +1269,7 @@ mod tests {
             let msg_prize_rank = msg_constructor_success(
                 Proposal::PrizesPerRanks,
                 None,
-                Option::from(vec![10, 10, 10, 70]),
+                Option::from(vec![100, 100, 100, 700, 0, 0]),
                 None,
                 None,
             );

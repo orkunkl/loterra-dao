@@ -30,7 +30,7 @@ pub struct PollInfoState {
     pub yes_vote: u64,
     pub no_vote: u64,
     pub amount: Uint128,
-    pub prizes_per_ranks: Vec<u8>,
+    pub prizes_per_ranks: Vec<u64>,
     pub proposal: Proposal,
     pub recipient: Option<String>,
     pub migration: Option<Migration>,
