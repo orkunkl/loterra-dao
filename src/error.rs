@@ -1,4 +1,4 @@
-use cosmwasm_std::StdError;
+use cosmwasm_std::{StdError, Uint128};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -11,6 +11,9 @@ pub enum ContractError {
 
     #[error("Send some funds")]
     EmptyFunds {},
+
+    #[error("Send {0} as collateral in order to create a proposal")]
+    RequiredCollateral(Uint128),
 
     #[error("Multiple denoms not allowed")]
     MultipleDenoms {},
@@ -29,6 +32,55 @@ pub enum ContractError {
 
     #[error("Not enough funds")]
     NotEnoughFunds {},
-    // Add any other custom errors you like here.
-    // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
+
+    #[error("Wrong description length {0}, minimum {1} maximum {2}")]
+    WrongDescLength(usize, u64, u64),
+
+    #[error("Amount between 0 to {0}")]
+    MaxReward(u8),
+
+    #[error("Invalid amount")]
+    InvalidAmount(),
+
+    #[error("Invalid block time")]
+    InvalidBlockTime(),
+
+    #[error("Invalid rank")]
+    InvalidRank(),
+
+    #[error("Numbers between 0 to 1000")]
+    InvalidNumber(),
+
+    #[error("Numbers total sum need to be equal to 1000")]
+    InvalidNumberSum(),
+
+    #[error("Migration is required")]
+    InvalidMigration(),
+
+    #[error("Migration address is required")]
+    NoMigrationAddress(),
+
+    #[error("Unknown proposal type")]
+    UnknownProposalType(),
+
+    #[error("Poll expired")]
+    PollExpired {},
+
+    #[error("Poll closed")]
+    PollClosed {},
+
+    #[error("Poll not found")]
+    PollNotFound {},
+
+    #[error("Only stakers can vote")]
+    OnlyStakersVote {},
+
+    #[error("Proposal expired")]
+    ProposalExpired {},
+
+    #[error("Proposal inprogress")]
+    ProposalInProgress {},
+
+    #[error("Already voted")]
+    AlreadyVoted {},
 }

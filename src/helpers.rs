@@ -1,8 +1,9 @@
+use crate::error::ContractError;
 use crate::msg::{HolderResponse, LoterraStaking, StakingStateResponse};
 use crate::state::{Config, PollStatus, POLL};
 use cosmwasm_std::{attr, to_binary, Addr, DepsMut, Response, StdResult, Uint128, WasmQuery};
 
-pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> StdResult<Response> {
+pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> Result<Response, ContractError> {
     POLL.update(
         deps.storage,
         &poll_id.to_be_bytes(),
@@ -12,16 +13,11 @@ pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> StdResult<Response> {
             Ok(update_poll)
         },
     )?;
-    Ok(Response {
-        submessages: vec![],
-        messages: vec![],
-        attributes: vec![
-            attr("action", "present the proposal"),
-            attr("proposal_id", poll_id.to_string()),
-            attr("proposal_result", "rejected"),
-        ],
-        data: None,
-    })
+    let res = Response::new()
+        .add_attribute("action", "present the proposal")
+        .add_attribute("proposal_id", poll_id.to_string())
+        .add_attribute("proposal_result", "rejected");
+    Ok(res)
 }
 
 pub fn user_total_weight(deps: &DepsMut, config: &Config, address: &Addr) -> Uint128 {
@@ -32,10 +28,7 @@ pub fn user_total_weight(deps: &DepsMut, config: &Config, address: &Addr) -> Uin
         address: address.to_string(),
     };
 
-    let loterra_human = deps
-        .api
-        .addr_humanize(&config.staking_contract_address.clone())
-        .unwrap();
+    let loterra_human = &config.staking_contract_address;
 
     let query = WasmQuery::Smart {
         contract_addr: loterra_human.to_string(),
@@ -53,10 +46,7 @@ pub fn user_total_weight(deps: &DepsMut, config: &Config, address: &Addr) -> Uin
 
 pub fn total_weight(deps: &DepsMut, config: &Config) -> Uint128 {
     let msg = LoterraStaking::State {};
-    let loterra_human = deps
-        .api
-        .addr_humanize(&config.staking_contract_address.clone())
-        .unwrap();
+    let loterra_human = &config.staking_contract_address;
     let query = WasmQuery::Smart {
         contract_addr: loterra_human.to_string(),
         msg: to_binary(&msg).unwrap(),

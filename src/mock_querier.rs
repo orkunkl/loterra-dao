@@ -141,13 +141,13 @@ impl WasmMockQuerier {
                             holders: vec![
                                 HolderResponse {
                                     address: "addr0000".to_string(),
-                                    balance: Uint128(15_000),
+                                    balance: Uint128::new(15_000),
                                     index: Decimal::zero(),
                                     pending_rewards: Decimal::zero(),
                                 },
                                 HolderResponse {
                                     address: "addr0001".to_string(),
-                                    balance: Uint128(10_000),
+                                    balance: Uint128::new(10_000),
                                     index: Decimal::zero(),
                                     pending_rewards: Decimal::zero(),
                                 },
@@ -167,8 +167,8 @@ impl WasmMockQuerier {
                     } else if msg == &Binary::from(r#"{"State":{}}"#.as_bytes()) {
                         let msg_balance = StakingStateResponse {
                             global_index: Decimal::percent(2),
-                            total_balance: Uint128(1_000_000_000),
-                            prev_reward_balance: Uint128(1_000_000_000),
+                            total_balance: Uint128::new(1_000_000_000),
+                            prev_reward_balance: Uint128::new(1_000_000_000),
                         };
                         return SystemResult::Ok(ContractResult::from(to_binary(&msg_balance)));
                     }
@@ -183,7 +183,7 @@ impl WasmMockQuerier {
                     SystemResult::Ok(ContractResult::from(to_binary(&res)))
                 }
                 TerraQuery::TaxCap { denom: _ } => {
-                    let cap = Uint128(1000000u128);
+                    let cap = Uint128::new(1000000u128);
                     let res = TaxCapResponse { cap };
                     SystemResult::Ok(ContractResult::from(to_binary(&res)))
                 }

@@ -1,22 +1,22 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Binary, CanonicalAddr, Uint128};
+use cosmwasm_std::{Addr, Binary, CanonicalAddr, Uint128};
 use cw_storage_plus::{Item, Map};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
-    pub admin: CanonicalAddr,
+    pub admin: Addr,
     pub poll_default_end_height: u64,
-    pub staking_contract_address: CanonicalAddr,
-    pub cw20_contract_address: CanonicalAddr,
+    pub staking_contract_address: Addr,
+    pub cw20_contract_address: Addr,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
     pub required_collateral: Uint128,
     pub denom: String,
     pub poll_id: u64,
-    pub loterry_address: Option<CanonicalAddr>,
+    pub loterry_address: Option<Addr>,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct PollInfoState {
@@ -36,7 +36,7 @@ pub struct PollInfoState {
     pub migration: Option<Migration>,
     pub collateral: Uint128,
     pub applied: bool,
-    pub contract_address: CanonicalAddr,
+    pub contract_address: Addr,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum PollStatus {
@@ -45,6 +45,23 @@ pub enum PollStatus {
     Rejected,
     RejectedByCreator,
 }
+/*
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub enum Proposal {
+    LotteryEveryBlockTime { block_time: Uint128 },
+    HolderFeePercentage { percentage: Uint128 },
+    DrandWorkerFeePercentage { percentage: Uint128 },
+    PrizesPerRanks{ ranks: Vec<u64> },
+    JackpotRewardPercentage{ percentage: Uint128 },
+    AmountToRegister{ percentage: Uint128 },
+    SecurityMigration{ migration: Migration },
+    DaoFunding { amount: Uint128 },
+    StakingContractMigration {},
+    PollSurvey,
+    // test purpose
+    NotExist,
+}
+ */
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum Proposal {
     LotteryEveryBlockTime,
