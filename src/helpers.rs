@@ -1,7 +1,7 @@
 use crate::error::ContractError;
 use crate::msg::{HolderResponse, LoterraStaking, StakingStateResponse};
 use crate::state::{Config, PollStatus, POLL};
-use cosmwasm_std::{attr, to_binary, Addr, DepsMut, Response, StdResult, Uint128, WasmQuery};
+use cosmwasm_std::{to_binary, Addr, DepsMut, Response, StdResult, Uint128, WasmQuery};
 
 pub fn reject_proposal(deps: DepsMut, poll_id: u64) -> Result<Response, ContractError> {
     POLL.update(

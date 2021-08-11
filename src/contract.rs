@@ -291,7 +291,7 @@ pub fn try_create_poll(
         return Err(ContractError::UnknownProposalType());
     };
 
-    let sender_to_canonical = deps.api.addr_canonicalize(&info.sender.as_str())?;
+    let sender_to_canonical = deps.api.addr_canonicalize(info.sender.as_str())?;
 
     let new_poll = PollInfoState {
         creator: sender_to_canonical,
@@ -394,7 +394,7 @@ fn try_reject(
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
     let poll = POLL.load(deps.storage, &poll_id.to_be_bytes())?;
-    let sender = deps.api.addr_canonicalize(&info.sender.as_str())?;
+    let sender = deps.api.addr_canonicalize(info.sender.as_str())?;
 
     // Ensure the sender not sending funds accidentally
     if !info.funds.is_empty() {
@@ -737,11 +737,8 @@ mod tests {
     use crate::state::{Migration, STATE};
     use crate::state::{PollInfoState, PollStatus, Proposal, POLL};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{
-        attr, Attribute, BankMsg, Coin, ContractResult, CosmosMsg, Decimal, Event, StdError,
-        StdResult,
-    };
-    use cosmwasm_std::{coins, from_binary, DepsMut, Uint128};
+    use cosmwasm_std::{coins, DepsMut, Uint128};
+    use cosmwasm_std::{Coin, ContractResult, Decimal, Event, StdResult};
 
     struct BeforeAll {
         default_sender: String,
@@ -769,7 +766,7 @@ mod tests {
         };
         let info = mock_info("creator", &coins(1000, "earth"));
         // we can just call .unwrap() to assert this was a success
-        let res = instantiate(deps, mock_env(), info, msg).unwrap();
+        let _res = instantiate(deps, mock_env(), info, msg).unwrap();
     }
     #[test]
     fn proper_initialization() {
@@ -886,9 +883,9 @@ mod tests {
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let res = execute(deps.as_mut(), env, info, msg);
             println!("{:?}", res);
-            let expected = Uint128::new(100000000);
+            let _expected = Uint128::new(100000000);
             match res {
-                Err(ContractError::RequiredCollateral(expected)) => {}
+                Err(ContractError::RequiredCollateral(_expected)) => {}
                 _ => panic!("Unexpected error"),
             }
         }
@@ -1138,7 +1135,7 @@ mod tests {
                 amount,
                 recipient,
                 prizes_per_ranks,
-                migration: migration,
+                migration,
                 contract_address: "lottery".to_string(),
             }
         }
@@ -1359,7 +1356,7 @@ mod tests {
         use crate::contract::execute;
         use crate::msg::ExecuteMsg;
         use crate::state::{PollInfoState, PollStatus, Proposal, POLL, POLL_VOTE};
-        use cosmwasm_std::{Api, Coin, Decimal, Event, StdError, StdResult};
+        use cosmwasm_std::{Api, Coin, Decimal, StdError, StdResult};
 
         // handle_vote
         fn create_poll(deps: DepsMut) {
@@ -1573,7 +1570,7 @@ mod tests {
         use crate::contract::execute;
         use crate::msg::ExecuteMsg;
         use crate::state::POLL;
-        use cosmwasm_std::{Coin, Event, Reply, Response, SubMsgExecutionResponse};
+        use cosmwasm_std::{Coin, Event, Reply, SubMsgExecutionResponse};
 
         // handle_reject
         fn create_poll(deps: DepsMut) {
@@ -1683,7 +1680,7 @@ mod tests {
                 events: vec![event],
                 data: None,
             });
-            let reply = reply(deps.as_mut(), mock_env(), Reply { id: 0, result }).unwrap();
+            let _reply = reply(deps.as_mut(), mock_env(), Reply { id: 0, result }).unwrap();
             let msg = ExecuteMsg::RejectPoll { poll_id: 1 };
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
@@ -1948,8 +1945,8 @@ mod tests {
                 Decimal::zero(),
             );
             default_init(deps.as_mut());
-            let env = mock_env();
-            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let _env = mock_env();
+            let _info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
 
             let env = mock_env();
@@ -1975,7 +1972,7 @@ mod tests {
                 events: vec![event],
                 data: None,
             });
-            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
+            let _reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let res = execute(deps.as_mut(), env, info, msg).unwrap();
             assert_eq!(res.attributes.len(), 3);
             assert_eq!(res.messages.len(), 2);
@@ -2011,7 +2008,7 @@ mod tests {
             );
             default_init(deps.as_mut());
             let env = mock_env();
-            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let _info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
 
             let event =
@@ -2020,7 +2017,7 @@ mod tests {
                 events: vec![event],
                 data: None,
             });
-            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
+            let _reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let env = mock_env();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let msg = ExecuteMsg::Vote {
@@ -2073,8 +2070,8 @@ mod tests {
                 Decimal::zero(),
             );
             default_init(deps.as_mut());
-            let env = mock_env();
-            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let _env = mock_env();
+            let _info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
 
             let env = mock_env();
@@ -2100,7 +2097,7 @@ mod tests {
                 events: vec![event],
                 data: None,
             });
-            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
+            let _reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let res = execute(deps.as_mut(), env, info, msg);
             match res {
                 Err(ContractError::ProposalInProgress {}) => {}
@@ -2122,8 +2119,8 @@ mod tests {
                 Decimal::zero(),
             );
             default_init(deps.as_mut());
-            let env = mock_env();
-            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let _env = mock_env();
+            let _info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
 
             let env = mock_env();
@@ -2143,7 +2140,7 @@ mod tests {
             env.block.height = poll_state.end_height + 1000;
 
             let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
-            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            let _res = execute(deps.as_mut(), env, info, msg).unwrap();
             let poll_state = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
                 .unwrap();
@@ -2165,7 +2162,7 @@ mod tests {
             );
             default_init(deps.as_mut());
             let env = mock_env();
-            let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
+            let _info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             create_poll(deps.as_mut());
             let event =
                 Event::new("instantiate_contract").add_attribute("contract_address", "loterra");
@@ -2173,7 +2170,7 @@ mod tests {
                 events: vec![event],
                 data: None,
             });
-            let reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
+            let _reply = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let env = mock_env();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let msg = ExecuteMsg::Vote {
@@ -2191,7 +2188,7 @@ mod tests {
             env.block.height = poll_state.end_height + 1000;
 
             let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
-            let res = execute(deps.as_mut(), env, info, msg).unwrap();
+            let _res = execute(deps.as_mut(), env, info, msg).unwrap();
             let poll_state = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
                 .unwrap();
@@ -2219,7 +2216,7 @@ mod tests {
                 events: vec![event],
                 data: None,
             });
-            let rep = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
+            let _rep = reply(deps.as_mut(), env.clone(), Reply { id: 0, result }).unwrap();
             let info = mock_info(before_all.default_sender.as_str().clone(), &[]);
             let msg = ExecuteMsg::Vote {
                 poll_id: 1,
@@ -2233,7 +2230,7 @@ mod tests {
             env.block.height = poll_state.end_height + 1000;
 
             let msg = ExecuteMsg::PresentPoll { poll_id: 1 };
-            let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+            let _res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
 
             let event = Event::new("message")
                 .add_attribute("action", "apply poll")
@@ -2248,7 +2245,7 @@ mod tests {
                     data: None,
                 }),
             };
-            let res = reply(deps.as_mut(), env.clone(), rep).unwrap();
+            let _res = reply(deps.as_mut(), env.clone(), rep).unwrap();
             let poll = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
                 .unwrap();
@@ -2267,7 +2264,7 @@ mod tests {
                     data: None,
                 }),
             };
-            let res = reply(deps.as_mut(), env, rep).unwrap();
+            let _res = reply(deps.as_mut(), env, rep).unwrap();
             let poll = POLL
                 .load(deps.as_ref().storage, &1_u64.to_be_bytes())
                 .unwrap();

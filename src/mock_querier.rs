@@ -175,7 +175,10 @@ impl WasmMockQuerier {
                 }
                 panic!("DO NOT ENTER HERE")
             }
-            QueryRequest::Custom(TerraQueryWrapper { route, query_data }) => match query_data {
+            QueryRequest::Custom(TerraQueryWrapper {
+                route: _,
+                query_data,
+            }) => match query_data {
                 TerraQuery::TaxRate {} => {
                     let res = TaxRateResponse {
                         rate: Decimal::percent(1),
